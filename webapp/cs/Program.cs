@@ -18,6 +18,26 @@ namespace cs
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration((hostingContext, config) =>
+                {
+                    var host = Environment.GetEnvironmentVariable("MYSQL_HOSTNAME");
+                    host ??= "127.0.0.1";
+                    var port = Environment.GetEnvironmentVariable("MYSQL_PORT");
+                    if (!int.TryParse(port, out _))
+                        port = null;
+                    port ??= "3306";
+                    var user = Environment.GetEnvironmentVariable("MYSQL_USER");
+                    user ??= "isutrain";
+                    var dbname = Environment.GetEnvironmentVariable("MYSQL_DATABASE");
+                    dbname ??= "isutrain";
+                    var password = Environment.GetEnvironmentVariable("MYSQL_PASSWORD");
+                    password ??= "isutrain";
+                    var connectionString = $"Server={host};Port={port};Database={dbname};Uid={user};Pwd={password};Charset=utf8mb4";
+                    config.AddInMemoryCollection(new[]
+                    {
+                        KeyValuePair.Create("ConnectionStrings:Isucon9", connectionString)
+                    });
+                })
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
                     webBuilder.UseStartup<Startup>();

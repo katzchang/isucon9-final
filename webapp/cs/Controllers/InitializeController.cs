@@ -1,10 +1,10 @@
 ﻿using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
-using System.Data.SqlClient;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -25,7 +25,10 @@ namespace cs.Controllers
         [HttpPost]
         public async Task<InitializeResponse> Initialize()
         {
-            using (var connection = new SqlConnection(configuration.GetConnectionString("Isucon9")))
+            var str = configuration.GetConnectionString("Isucon9");
+            Console.Write("strat init.");
+            Console.WriteLine(str);
+            using (var connection = new MySqlConnection(str))
             {
                 connection.Open();
                 await connection.ExecuteAsync("TRUNCATE seat_reservations");
