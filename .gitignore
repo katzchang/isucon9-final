@@ -231,3 +231,7 @@ typings/
 
 # DynamoDB Local files
 .dynamodb/
+
+#cs
+obj/
+webapp/cs/bin
