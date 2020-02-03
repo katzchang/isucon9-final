@@ -28,10 +28,10 @@ namespace cs
         {
             services.AddControllers();
             services.Configure<RouteOptions>(options => {
-                // URL���������ɂ���
                 options.LowercaseUrls = true;
                 options.LowercaseQueryStrings = true;
             });
+            Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

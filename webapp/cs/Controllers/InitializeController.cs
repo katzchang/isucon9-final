@@ -26,8 +26,6 @@ namespace cs.Controllers
         public async Task<InitializeResponse> Initialize()
         {
             var str = configuration.GetConnectionString("Isucon9");
-            Console.Write("strat init.");
-            Console.WriteLine(str);
             using (var connection = new MySqlConnection(str))
             {
                 connection.Open();
