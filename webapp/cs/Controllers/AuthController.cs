@@ -118,11 +118,14 @@ namespace cs.Controllers
         [HttpPost("login")]
         public async Task<ActionResult> Login(UserModel postUser)
         {
+            Console.WriteLine($"login... {postUser.Email} {postUser.Password}");
             var str = configuration.GetConnectionString("Isucon9");
+            Console.WriteLine($"str {str}");
             using (var connection = new MySqlConnection(str))
             {
                 connection.Open();
-                var user = await connection.QueryFirstOrDefaultAsync<UserModel>("SELECT * FROM users WHERE email=?", postUser.Email);
+                var user = await connection.QueryFirstOrDefaultAsync<UserModel>("SELECT * FROM users WHERE email=@email", new {email=postUser.Email});
+                Console.WriteLine($"user. {user}");
                 if (user == null)
                 {
                     return new ForbidResult("authentication failed");
@@ -135,6 +138,7 @@ namespace cs.Controllers
                 }
                 try
                 {
+                    Console.WriteLine($"get user {user.SuperSecurePassword}");
                     httpContext.Session.Set("user_id", BitConverter.GetBytes(user.ID));
                     await httpContext.Session.CommitAsync();
                 }

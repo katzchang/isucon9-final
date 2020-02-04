@@ -27,6 +27,16 @@ namespace cs
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddControllers();
+            services.AddHttpContextAccessor();
+            services.AddDistributedMemoryCache();
+            services.AddSession(options =>
+            {
+                // Set a short timeout for easy testing.
+                options.IdleTimeout = TimeSpan.FromMinutes(60);
+                options.Cookie.HttpOnly = true;
+                // Make the session cookie essential
+                options.Cookie.IsEssential = true;
+            });
             services.Configure<RouteOptions>(options => {
                 options.LowercaseUrls = true;
                 options.LowercaseQueryStrings = true;
@@ -48,7 +58,7 @@ namespace cs
             app.UseRouting();
 
             app.UseAuthorization();
-
+            app.UseSession();
             app.UseEndpoints(endpoints => 
             {
                 endpoints.MapControllerRoute("default", "api/{controller=Home}/{action=Index}/{id?}");
