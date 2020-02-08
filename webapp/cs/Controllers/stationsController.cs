@@ -35,19 +35,17 @@ namespace cs.Controllers
 
     public class StationModel
     {
-        [JsonPropertyName("date")]
-        public DateTime Date { get; set; }
-        [JsonPropertyName("departure_at")]
-        public string DepartureAt { get; set; }
-        [JsonPropertyName("train_class")]
-        public string TrainClass { get; set; }
-        [JsonPropertyName("train_name")]
-        public string TrainName { get; set; }
-        [JsonPropertyName("start_station")]
-        public string StartStation { get; set; }
-        [JsonPropertyName("last_station")]
-        public string LastStation { get; set; }
-        [JsonPropertyName("is_nobori")]
-        public bool IsNobori { get; set; }
+        [JsonPropertyName("id")]
+        public int ID { get; set; }
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+        [JsonPropertyName("distance")]
+        public double Distance { get; set; }
+        [JsonPropertyName("is_stop_express")]
+        public bool IsStopExpress { get; set; }
+        [JsonPropertyName("is_stop_semi_express")]
+        public bool IsStopSemiExpress { get; set; }
+        [JsonPropertyName("is_stop_local")]
+        public bool IsStopLocal { get; set; }
     }
 }

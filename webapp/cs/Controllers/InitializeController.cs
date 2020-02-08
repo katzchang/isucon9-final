@@ -1,4 +1,5 @@
-﻿using Dapper;
+﻿using cs.Models;
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using MySql.Data.MySqlClient;
@@ -6,7 +7,6 @@ using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
-using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace cs.Controllers
@@ -35,17 +35,9 @@ namespace cs.Controllers
             }
             return new InitializeResponse
             {
-                AvailableDays = 10,
-                Language = "C#"
+                AvailableDays = Utils.AvailableDates,
+                Language = Utils.Language
             };
         }
-    }
-
-    public class InitializeResponse
-    {
-        [JsonPropertyName("available_days")]
-        public int AvailableDays { get; set; }
-        [JsonPropertyName("language")]
-        public string Language { get; set; }
     }
 }

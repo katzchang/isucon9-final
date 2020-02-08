@@ -235,3 +235,4 @@ typings/
 #cs
 webapp/cs/obj/
 webapp/cs/bin
+/webapp/cs/.vs/cs

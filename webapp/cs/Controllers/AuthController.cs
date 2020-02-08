@@ -1,4 +1,5 @@
-﻿using Dapper;
+﻿using cs.Models;
+using Dapper;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -8,14 +9,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace cs.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class AuthController 
+    public class AuthController
     {
         private readonly IConfiguration configuration;
         private readonly HttpContext httpContext;
@@ -124,7 +124,7 @@ namespace cs.Controllers
             using (var connection = new MySqlConnection(str))
             {
                 connection.Open();
-                var user = await connection.QueryFirstOrDefaultAsync<UserModel>("SELECT * FROM users WHERE email=@email", new {email=postUser.Email});
+                var user = await connection.QueryFirstOrDefaultAsync<UserModel>("SELECT * FROM users WHERE email=@email", new { email = postUser.Email });
                 Console.WriteLine($"user. {user}");
                 if (user == null)
                 {
@@ -174,23 +174,5 @@ namespace cs.Controllers
         }
     }
 
-    public class UserModel
-    {
-        [JsonPropertyName("ID")]
-        public long ID { get; set; }
-        [JsonPropertyName("email")]
-        public string Email { get; set; }
-        [JsonPropertyName("password")]
-        public string Password { get; set; }
-        [JsonIgnore]
-        public byte[] Salt { get; set; }
-        [JsonIgnore]
-        public byte[] SuperSecurePassword { get; set; }
-    }
-
-    public class AuthResponseModel
-    {
-        [JsonPropertyName("email")]
-        public string Email { get; set; }
-    }
+    
 }
