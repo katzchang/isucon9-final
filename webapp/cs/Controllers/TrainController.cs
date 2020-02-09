@@ -95,7 +95,7 @@ namespace cs.Controllers
             var isNobori = fromStation.Distance > toStation.Distance;
 
             var usableTrainClassList = Utils.GetUsableTrainClassList(fromStation, toStation);
-            var query = $"SELECT * FROM train_master WHERE date=@Date AND train_class IN (@usableTrainClassList) AND is_nobori=@isNobori{(trainClass == null ? "" : " AND train_class=@trainClass")}";
+            var query = $"SELECT * FROM train_master WHERE date=@Date AND train_class IN (@usableTrainClassList) AND is_nobori=@isNobori{(string.IsNullOrEmpty(trainClass) ? "" : " AND train_class=@trainClass")}";
             var trainList = await connection.QueryAsync<TrainModel>(query, new { date.Date, usableTrainClassList, isNobori, trainClass });
 
             query = $"SELECT * FROM station_master ORDER BY distance{(isNobori ? " DESC" : "")}";
@@ -482,7 +482,7 @@ WHERE
             async Task<int> GetDistanceFare(double origToDestDistance)
             {
                 var q = "SELECT distance,fare FROM distance_fare_master ORDER BY distance";
-                var distanceFareList = await connection.QueryAsync<DistanceFareModel>(query);
+                var distanceFareList = await connection.QueryAsync<DistanceFareModel>(q);
 
                 var lastDistance = 0d;
                 var lastFare = 0;

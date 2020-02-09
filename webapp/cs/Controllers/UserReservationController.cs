@@ -1,10 +1,12 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using Dapper;
 
 namespace cs.Controllers
 {
@@ -20,24 +22,27 @@ namespace cs.Controllers
         }
 
         [HttpGet]
-        public SettingModel List()
+        public async Task<ActionResult> List()
         {
-            var api = Environment.GetEnvironmentVariable("PAYMENT_API") ?? "http://localhost:5000";
-            return new SettingModel{ PaymentAPI = api };
+            var str = configuration.GetConnectionString("Isucon9");
+            using var connection = new MySqlConnection(str);
+            return null;
         }
 
         [HttpGet("/{id}")]
-        public SettingModel Get(long id)
+        public async Task<ActionResult> Get(long id)
         {
-            var api = Environment.GetEnvironmentVariable("PAYMENT_API") ?? "http://localhost:5000";
-            return new SettingModel { PaymentAPI = api };
+            var str = configuration.GetConnectionString("Isucon9");
+            using var connection = new MySqlConnection(str);
+            return null;
         }
 
         [HttpPost("/{id}/cancel")]
-        public SettingModel Cancel(long id)
+        public async Task<ActionResult> Cancel(long id)
         {
-            var api = Environment.GetEnvironmentVariable("PAYMENT_API") ?? "http://localhost:5000";
-            return new SettingModel { PaymentAPI = api };
+            var str = configuration.GetConnectionString("Isucon9");
+            using var connection = new MySqlConnection(str);
+            return null;
         }
 
     }
