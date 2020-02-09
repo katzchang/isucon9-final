@@ -44,7 +44,9 @@ namespace cs.Controllers
             DateTimeOffset date;
             try
             {
-                date = new DateTimeOffset(DateTime.Parse(useAt), Utils.TokyoStandardTimeZone.BaseUtcOffset);
+                var d = DateTimeOffset.Parse(useAt);
+                date = TimeZoneInfo.ConvertTime(d, Utils.TokyoStandardTimeZone);
+//                date = new DateTimeOffset(d.ToUniversalTime(), Utils.TokyoStandardTimeZone.BaseUtcOffset);
             }
             catch (Exception e)
             {
