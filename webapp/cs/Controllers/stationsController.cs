@@ -47,5 +47,6 @@ namespace cs.Controllers
         public bool IsStopSemiExpress { get; set; }
         [JsonPropertyName("is_stop_local")]
         public bool IsStopLocal { get; set; }
+        public override string ToString() => $"{{{ID} {Name} {Distance} {IsStopExpress} {IsStopSemiExpress} {IsStopLocal}}}";
     }
 }

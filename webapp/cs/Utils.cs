@@ -18,12 +18,14 @@ namespace cs
                 {"local", "遅いやつ"}
             });
         public static readonly int AvailableDates = 10;
+        //TODO Unixでしか動かない
         public static readonly TimeZoneInfo TokyoStandardTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo");
         public static readonly string Language = "C#";
 
         public static bool CheckAvailableDate(DateTimeOffset date)
         {
             var t = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TokyoStandardTimeZone.BaseUtcOffset);
+            t.AddDays(AvailableDates);
             return date < t;
         }
 
