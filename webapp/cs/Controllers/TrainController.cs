@@ -99,9 +99,11 @@ Console.WriteLine($"date is {date}");
             var isNobori = fromStation.Distance > toStation.Distance;
 
             var usableTrainClassList = Utils.GetUsableTrainClassList(fromStation, toStation);
+            Console.WriteLine($"usableTrainClassList {usableTrainClassList.First()}");
             var query = $"SELECT * FROM train_master WHERE date=@Date AND train_class IN @usableTrainClassList AND is_nobori=@isNobori{(string.IsNullOrEmpty(trainClass) ? "" : " AND train_class=@trainClass")}";
-            var trainList = await connection.QueryAsync<TrainModel>(query, new { date.Date, usableTrainClassList, isNobori, trainClass });
-
+            Console.WriteLine(new { Date=date.Date.ToString("yyyy-MM-dd"), usableTrainClassList, isNobori, trainClass });
+            var trainList = await connection.QueryAsync<TrainModel>(query, new { Date=date.Date.ToString("yyyy-MM-dd"), usableTrainClassList, isNobori, trainClass });
+            Console.WriteLine($"trainList {trainList.Count()}");
             query = $"SELECT * FROM station_master ORDER BY distance{(isNobori ? " DESC" : "")}";
             var stations = await connection.QueryAsync<StationModel>(query);
 

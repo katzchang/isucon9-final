@@ -8,7 +8,7 @@ namespace cs.Models
         [JsonPropertyName("date")]
         public DateTime Date { get; set; }
         [JsonPropertyName("departure_at")]
-        public string DepartureAt { get; set; }
+        public TimeSpan DepartureAt { get; set; }
         [JsonPropertyName("train_class")]
         public string TrainClass { get; set; }
         [JsonPropertyName("train_name")]

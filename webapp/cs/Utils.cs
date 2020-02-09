@@ -24,8 +24,7 @@ namespace cs
 
         public static bool CheckAvailableDate(DateTimeOffset date)
         {
-            var t = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TokyoStandardTimeZone.BaseUtcOffset);
-            t.AddDays(AvailableDates);
+            var t = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TokyoStandardTimeZone.BaseUtcOffset).AddDays(AvailableDates);
             return date < t;
         }
 
@@ -56,7 +55,7 @@ namespace cs
             {
                 usable.Remove("local");
             }
-            return usable.Keys.ToArray();
+            return usable.Values.ToArray();
         }
     }
 }

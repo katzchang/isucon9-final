@@ -40,10 +40,7 @@ namespace cs.Controllers
             }
             catch (Exception e)
             {
-                return new ObjectResult(e.Message)
-                {
-                    StatusCode = StatusCodes.Status500InternalServerError
-                };
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, e);
             }
         }
 
@@ -85,12 +82,9 @@ namespace cs.Controllers
                 {
                     rng.GetBytes(salt);
                 }
-                catch (Exception)
+                catch (Exception e)
                 {
-                    return new ObjectResult("salt generator error")
-                    {
-                        StatusCode = StatusCodes.Status500InternalServerError
-                    };
+                    throw new HttpResponseException(StatusCodes.Status500InternalServerError, "salt generator error", e);
                 }
             }
             var b = new Rfc2898DeriveBytes(user.Password, salt, 100, HashAlgorithmName.SHA256);
@@ -104,15 +98,16 @@ namespace cs.Controllers
                     await connection.ExecuteAsync("INSERT INTO `users` (`email`, `salt`, `super_secure_password`) VALUES (@email, @salt, @superSecurePassword)",
                     new { email = user.Email, salt, superSecurePassword });
                 }
-                catch (Exception)
+                catch (Exception e)
                 {
-                    return new ObjectResult("user registration failed")
-                    {
-                        StatusCode = StatusCodes.Status500InternalServerError
-                    };
+                    throw new HttpResponseException(StatusCodes.Status500InternalServerError, "user registration failed", e);
                 }
             }
-            return new OkObjectResult("registration complete");
+            return new OkObjectResult(new 
+            {
+                is_error = false,
+                message = "registration complete"
+            });
         }
 
         [HttpPost("login")]
@@ -128,13 +123,13 @@ namespace cs.Controllers
                 Console.WriteLine($"user. {user}");
                 if (user == null)
                 {
-                    return new ForbidResult("authentication failed");
+                    throw new HttpResponseException(StatusCodes.Status403Forbidden, "authentication failed");
                 }
                 var b = new Rfc2898DeriveBytes(postUser.Password, user.Salt, 100, HashAlgorithmName.SHA256);
                 var challengePassword = b.GetBytes(256);
                 if (!(user.SuperSecurePassword?.SequenceEqual(challengePassword) == true))
                 {
-                    return new ForbidResult("authentication failed");
+                    throw new HttpResponseException(StatusCodes.Status403Forbidden, "authentication failed");
                 }
                 try
                 {
@@ -144,14 +139,14 @@ namespace cs.Controllers
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine(e);
-                    return new ObjectResult("session error")
-                    {
-                        StatusCode = StatusCodes.Status500InternalServerError
-                    };
+                    throw new HttpResponseException(StatusCodes.Status500InternalServerError, "session error", e);
                 }
             }
-            return new OkObjectResult("autheticated");
+            return new OkObjectResult(new 
+            {
+                is_error = false,
+                message = "autheticated"
+            });
         }
 
         [HttpPost("logout")]
@@ -164,13 +159,13 @@ namespace cs.Controllers
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
-                return new ObjectResult("session error")
-                {
-                    StatusCode = StatusCodes.Status500InternalServerError
-                };
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "session error", e);
             }
-            return new OkObjectResult("autheticated");
+            return new OkObjectResult(new 
+            {
+                is_error = false,
+                message = "logged out"
+            });
         }
     }
 
