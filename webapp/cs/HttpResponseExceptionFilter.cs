@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -22,6 +23,11 @@ namespace cs
                 StatusCode = exception.Status,
             };
             context.ExceptionHandled = true;
+        }
+        else if (context.Exception != null)
+        {
+            Console.WriteLine("Unhandled exception!!!");
+            Console.WriteLine(context.Exception);
         }
     }
 }

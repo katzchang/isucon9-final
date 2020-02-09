@@ -26,7 +26,8 @@ namespace cs
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddControllers();
+            services.AddControllers(options =>
+                options.Filters.Add(new HttpResponseExceptionFilter()));
             services.AddHttpContextAccessor();
             services.AddDistributedMemoryCache();
             services.AddSession(options =>
@@ -48,13 +49,9 @@ namespace cs
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             Console.WriteLine(Configuration.GetConnectionString("Isucon9"));
-            if (env.IsDevelopment())
-            {
-                app.UseDeveloperExceptionPage();
-            }
-
+            
             app.UseRouting();
-
+            
             app.UseAuthorization();
             app.UseSession();
             app.UseEndpoints(endpoints => 

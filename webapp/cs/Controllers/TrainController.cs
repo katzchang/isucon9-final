@@ -46,17 +46,15 @@ namespace cs.Controllers
             {
                 var d = DateTimeOffset.Parse(useAt);
                 date = TimeZoneInfo.ConvertTime(d, Utils.TokyoStandardTimeZone);
-//                date = new DateTimeOffset(d.ToUniversalTime(), Utils.TokyoStandardTimeZone.BaseUtcOffset);
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
-                return new BadRequestObjectResult(e);
+                throw new HttpResponseException(StatusCodes.Status400BadRequest, e);
             }
-Console.WriteLine($"date is {date}");
+            
             if (!Utils.CheckAvailableDate(date))
             {
-                return new NotFoundObjectResult("予約可能期間外です");
+                throw new HttpResponseException(StatusCodes.Status404NotFound, "予約可能期間外です");
             }
 
             var str = configuration.GetConnectionString("Isucon9");
@@ -74,8 +72,7 @@ Console.WriteLine($"date is {date}");
                 fromStation = await GetStation(from);
                 if (fromStation == null)
                 {
-                    Console.WriteLine("fromStation: no rows");
-                    return new BadRequestObjectResult("fromStation: no rows");
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, "fromStation: no rows");
                 }
             }
             catch (Exception e)
@@ -87,23 +84,22 @@ Console.WriteLine($"date is {date}");
                 toStation = await GetStation(to);
                 if (toStation == null)
                 {
-                    Console.WriteLine("toStation: no rows");
-                    return new BadRequestObjectResult("toStation: no rows");
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, "toStation: no rows");
                 }
             }
             catch (Exception e)
             {
-                return new ObjectResult(e) { StatusCode = StatusCodes.Status500InternalServerError };
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, e);
             }
 
             var isNobori = fromStation.Distance > toStation.Distance;
 
             var usableTrainClassList = Utils.GetUsableTrainClassList(fromStation, toStation);
-            Console.WriteLine($"usableTrainClassList {usableTrainClassList.First()}");
+            
             var query = $"SELECT * FROM train_master WHERE date=@Date AND train_class IN @usableTrainClassList AND is_nobori=@isNobori{(string.IsNullOrEmpty(trainClass) ? "" : " AND train_class=@trainClass")}";
-            Console.WriteLine(new { Date=date.Date.ToString("yyyy-MM-dd"), usableTrainClassList, isNobori, trainClass });
+            
             var trainList = await connection.QueryAsync<TrainModel>(query, new { Date=date.Date.ToString("yyyy-MM-dd"), usableTrainClassList, isNobori, trainClass });
-            Console.WriteLine($"trainList {trainList.Count()}");
+            
             query = $"SELECT * FROM station_master ORDER BY distance{(isNobori ? " DESC" : "")}";
             var stations = await connection.QueryAsync<StationModel>(query);
 
@@ -166,26 +162,30 @@ Console.WriteLine($"date is {date}");
                 if (isContainsOriginStation && isContainsDestStation)
                 {
                     // 列車情報
-
+                    Console.WriteLine("列車情報...");
                     try
                     {
                         // 所要時間
-                        var departure = await connection.QuerySingleAsync<string>(
+                        var departure = await connection.QuerySingleAsync<TimeSpan>(
                             "SELECT departure FROM train_timetable_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName AND station=@Name",
                             new { date.Date, train.TrainClass, train.TrainName, fromStation.Name });
-                        var departureDate = DateTimeOffset.Parse($"{date.ToString("yyyy/MM/dd")} {departure} +09:00");
+                        
+                        var departureDate = DateTimeOffset.Parse($"{date.ToString("yyyy/MM/dd")} {departure.ToString("c")} +09:00");
+                        
                         if (!(date < departureDate))
                         {
                             // 乗りたい時刻より出発時刻が前なので除外
                             continue;
                         }
-                        var arrival = await connection.QuerySingleAsync<string>(
+                        
+                        var arrival = await connection.QuerySingleAsync<TimeSpan>(
                             "SELECT arrival  FROM train_timetable_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName AND station=@Name",
                             new { date.Date, train.TrainClass, train.TrainName, toStation.Name });
 
                         async Task<SeatModel[]> GetAvailableSeats(TrainModel train,
                             StationModel fromStation, StationModel toStation, string seatClass, bool isSmokingSeat)
                         {
+                            
                             // 全ての座席を取得する
                             var q = "SELECT * FROM seat_master WHERE train_class=@TrainClass AND seat_class=@seatClass AND is_smoking_seat=@isSmokingSeat";
                             var seatList = await connection.QueryAsync<SeatModel>(q,
@@ -238,6 +238,7 @@ WHERE
                             var reservedAvail = ToAvailabilityString(reservedAvailSeats);
                             var reservedSmokeAvail = ToAvailabilityString(reservedSmokeAvailSeats);
 
+                            
                             // 空席情報
                             var seatAvailability = new Dictionary<string, string>
                             {
@@ -245,9 +246,10 @@ WHERE
                                 {"premium_smoke", premiumSmokeAvail},
                                 {"reserved", reservedAvail},
                                 {"reserved_smoke", reservedSmokeAvail},
-                                {"premium", "○"}
+                                {"non_reserved", "○"}
                             };
 
+                            Console.WriteLine("料金計算...");
                             // 料金計算
                             int premiumFare, reservedFare, nonReservedFare;
                             try
@@ -261,7 +263,7 @@ WHERE
                             }
                             catch (Exception e)
                             {
-                                return new ObjectResult(e) { StatusCode = StatusCodes.Status400BadRequest };
+                                throw new HttpResponseException(StatusCodes.Status400BadRequest, e);
                             }
                             var fareInformation = new Dictionary<string, int>
                             {
@@ -280,8 +282,8 @@ WHERE
                                 Last = train.LastStation,
                                 Departure = fromStation.Name,
                                 Arrival = toStation.Name,
-                                DepartureTime = departure,
-                                ArrivalTime = arrival,
+                                DepartureTime = departure.ToString("c"),
+                                ArrivalTime = arrival.ToString("c"),
                                 SeatAvailability = seatAvailability,
                                 Fare = fareInformation
                             });
@@ -293,12 +295,12 @@ WHERE
                         }
                         catch (Exception e)
                         {
-                            return new ObjectResult(e) { StatusCode = StatusCodes.Status400BadRequest };
+                            throw new HttpResponseException(StatusCodes.Status400BadRequest, e);
                         }
                     }
                     catch (Exception e)
                     {
-                        return new ObjectResult(e) { StatusCode = StatusCodes.Status500InternalServerError };
+                        throw new HttpResponseException(StatusCodes.Status500InternalServerError, e);
                     }
                 }
             }
@@ -322,7 +324,7 @@ WHERE
 
                 if (!Utils.CheckAvailableDate(date))
                 {
-                    return new NotFoundObjectResult("予約可能期間外です");
+                    throw new HttpResponseException(StatusCodes.Status404NotFound, "予約可能期間外です");
                 }
 
                 var str = configuration.GetConnectionString("Isucon9");
@@ -333,7 +335,7 @@ WHERE
                     new { date.Date, trainClass, trainName });
                 if (train == null)
                 {
-                    return new NotFoundObjectResult("列車が存在しません");
+                    throw new HttpResponseException(StatusCodes.Status404NotFound, "列車が存在しません");
                 }
 
                 query = "SELECT * FROM station_master WHERE name=@Name";
@@ -347,7 +349,7 @@ WHERE
                     usable = v == train.TrainClass;
                 }
                 if (!usable)
-                    throw new Exception("invalid train_class");
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, "invalid train_class");
 
                 query = "SELECT * FROM seat_master WHERE train_class=@trainClass AND car_number=@carNumber ORDER BY seat_row, seat_column";
                 var seatList = await connection.QueryAsync<SeatModel>(query, new { trainClass, carNumber });
@@ -455,7 +457,7 @@ WHERE
             }
             catch (Exception e)
             {
-                return new BadRequestObjectResult(e);
+                throw new HttpResponseException(StatusCodes.Status400BadRequest, e);
             }
         }
 

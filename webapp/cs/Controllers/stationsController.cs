@@ -1,4 +1,5 @@
 ﻿using Dapper;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using MySql.Data.MySqlClient;
@@ -25,11 +26,17 @@ namespace cs.Controllers
         public async Task<IEnumerable<StationModel>> List()
         {
             var str = configuration.GetConnectionString("Isucon9");
-            using (var connection = new MySqlConnection(str))
+            try
             {
+                using var connection = new MySqlConnection(str);
                 connection.Open();
                 return (await connection.QueryAsync<StationModel>("SELECT * FROM station_master ORDER BY id")).ToArray();
             }
+            catch (Exception e)
+            {
+                throw new HttpResponseException(StatusCodes.Status400BadRequest, e);
+            }
+            
         }
     }
 
