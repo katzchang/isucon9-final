@@ -18,7 +18,7 @@ namespace cs
                 {"local", "遅いやつ"}
             });
         public static readonly int AvailableDates = 10;
-        public static readonly TimeZoneInfo TokyoStandardTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Tokyo Standard Time");
+        public static readonly TimeZoneInfo TokyoStandardTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo");
         public static readonly string Language = "C#";
 
         public static bool CheckAvailableDate(DateTimeOffset date)

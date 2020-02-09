@@ -40,6 +40,7 @@ namespace cs.Controllers
             [FromQuery(Name = "use_at")]string useAt, [FromQuery]string from, [FromQuery]string to,
             [FromQuery(Name = "train_class")]string trainClass, [FromQuery]int adult, [FromQuery]int child)
         {
+            Console.WriteLine("search...");
             DateTimeOffset date;
             try
             {
@@ -47,9 +48,10 @@ namespace cs.Controllers
             }
             catch (Exception e)
             {
+                Console.WriteLine(e);
                 return new BadRequestObjectResult(e);
             }
-
+Console.WriteLine($"date is {date}");
             if (!Utils.CheckAvailableDate(date))
             {
                 return new NotFoundObjectResult("予約可能期間外です");
