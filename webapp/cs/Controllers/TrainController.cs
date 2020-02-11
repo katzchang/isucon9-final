@@ -264,9 +264,9 @@ WHERE
                             {
                                 premiumFare = await FareCalc(date, fromStation.ID, toStation.ID, train.TrainClass, "premium", connection);
                                 premiumFare = premiumFare * adult + premiumFare / 2 * child;
-                                reservedFare = await FareCalc(date, fromStation.ID, toStation.ID, train.TrainClass, "premium", connection);
+                                reservedFare = await FareCalc(date, fromStation.ID, toStation.ID, train.TrainClass, "reserved", connection);
                                 reservedFare = reservedFare * adult + reservedFare / 2 * child;
-                                nonReservedFare = await FareCalc(date, fromStation.ID, toStation.ID, train.TrainClass, "premium", connection);
+                                nonReservedFare = await FareCalc(date, fromStation.ID, toStation.ID, train.TrainClass, "non-reserved", connection);
                                 nonReservedFare = nonReservedFare * adult + nonReservedFare / 2 * child;
                             }
                             catch (Exception e)
@@ -320,7 +320,7 @@ WHERE
         /// GET /train/seats?date=2020-03-01&train_class=のぞみ&train_name=96号&car_number=2&from=大阪&to=東京
         /// </summary>
         /// <returns></returns>
-        [HttpGet("seat")]
+        [HttpGet("seats")]
         public async Task<CarInformationModel> ListSeat(
             [FromQuery(Name ="date")]string dateString, [FromQuery(Name = "train_class")]string trainClass,
             [FromQuery(Name = "train_name")]string trainName, [FromQuery(Name = "car_number")]int carNumber,
@@ -328,7 +328,8 @@ WHERE
         {
             try
             {
-                var date = new DateTimeOffset(DateTime.ParseExact(dateString, "yyyy-MM-dd", null), Utils.TokyoStandardTimeZone.BaseUtcOffset);
+                var d = DateTimeOffset.Parse(dateString);
+                var date = TimeZoneInfo.ConvertTime(d, Utils.TokyoStandardTimeZone);
 
                 if (!Utils.CheckAvailableDate(date))
                 {
@@ -354,10 +355,11 @@ WHERE
                 var usable = false;
                 foreach (var v in usableTrainClassList)
                 {
-                    usable = v == train.TrainClass;
+                    if (v == train.TrainClass)
+                        usable = true;
                 }
                 if (!usable)
-                    throw new HttpResponseException(StatusCodes.Status400BadRequest, "invalid train_class");
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, $"invalid train_class {train.TrainClass}");
 
                 query = "SELECT * FROM seat_master WHERE train_class=@trainClass AND car_number=@carNumber ORDER BY seat_row, seat_column";
                 var seatList = await connection.QueryAsync<SeatModel>(query, new { trainClass, carNumber });
@@ -378,12 +380,12 @@ WHERE
 SELECT s.* 
 FROM seat_reservations s, reservations r 
 WHERE 
-	r.date=@Date AND r.train_class=@TrainClass AND r.train_name=@trainName AND car_number=@carNumber AND seat_row=@SeatRow AND seat_column=@SeatColumn";
+	r.date=@Date AND r.train_class=@TrainClass AND r.train_name=@trainName AND car_number=@CarNumber AND seat_row=@SeatRow AND seat_column=@SeatColumn";
 
+                    Console.WriteLine(new {date.Date,seat.TrainClass, trainName,seat.CarNumber,seat.SeatClass, seat.SeatColumn });
                     var seatReservationList = await connection.QueryAsync<SeatReservationModel>(query,
-                        new {date.Date,seat.TrainClass, trainName,seat.CarNumber,seat.SeatClass, seat.SeatColumn });
-                    Console.WriteLine(seatReservationList);
-
+                        new {Date=date.Date.ToString("yyyy-MM-dd"),seat.TrainClass, trainName,seat.CarNumber,seat.SeatRow, seat.SeatColumn });
+                    Console.WriteLine($"seatReservationList {seatReservationList.Count()}");
                     foreach (var seatReservation in seatReservationList)
                     {
                         query = "SELECT * FROM reservations WHERE reservation_id=@ReservationId";
@@ -425,16 +427,16 @@ WHERE
                                 s.IsOccupied = true;
                             }
                         }
-                        Console.WriteLine(s.IsOccupied);
-                        seatInformationList.Add(s);
                     }
+                    Console.WriteLine($"adding seat: {s.IsOccupied}");
+                    seatInformationList.Add(s);
                 }
 
                 // 各号車の情報
 
                 var simpleCarInformationList = new List<SimpleCarInformationModel>();
                 query = "SELECT * FROM seat_master WHERE train_class=@trainClass AND car_number=@i ORDER BY seat_row, seat_column LIMIT 1";
-                var i = 0;
+                var i = 1;
                 while (true)
                 {
                     try
@@ -522,6 +524,7 @@ WHERE
 
             var str = configuration.GetConnectionString("Isucon9");
             using var connection = new MySqlConnection(str);
+            await connection.OpenAsync();
             using var txn = await connection.BeginTransactionAsync();
 
             var query = "SELECT * FROM train_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName";
@@ -655,7 +658,7 @@ WHERE
                     //当該列車・号車中の空き座席検索
                     try
                     {
-                        query = "SELECT * FROM train_master WHERE date=@Date AND train_class=@TrainCalss AND train_name=@TrainName";
+                        query = "SELECT * FROM train_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName";
                         var train = await connection.QueryFirstOrDefaultAsync<TrainModel>(query,
                             new { Date = date.ToString("yyyy-MM-dd"), req.TrainClass, req.TrainName });
                         if (train == null)
@@ -834,9 +837,9 @@ WHERE
                     foreach (var z in req.Seats)
                     {
                         Console.WriteLine($"xxxx {z}");
-                        query = "SELECT * FROM seat_master WHERE train_class=@TrainClass AND car_number=CarNumber AND seat_column=@Column AND seat_row=@Row AND seat_class=@SeatClass";
+                        query = "SELECT * FROM seat_master WHERE train_class=@TrainClass AND car_number=@CarNumber AND seat_column=@Column AND seat_row=@Row AND seat_class=@SeatClass";
                         var seat = await connection.QuerySingleOrDefaultAsync<SeatModel>(query,
-                            new { req.TrainClass, req.CarNumber, z.Column, z.Row, req.SeatClass,});
+                            new { req.TrainClass, req.CarNumber, z.Column, z.Row, req.SeatClass});
                         if (seat == null)
                         {
                             await txn.RollbackAsync();
@@ -1012,8 +1015,8 @@ WHERE
                 "non-reserved" => await FareCalcBySeat("non-reserved"),
                 null => await Throw(),
             };
-            var sumFare = (req.Adult * fare) + (req.Child * fare) / 2;
-            Console.WriteLine("SUMFARE");
+            var sumFare = (req.Adult * fare) + ((req.Child * fare) / 2);
+            Console.WriteLine($"SUMFARE {sumFare}");
 
             // userID取得。ログインしてないと怒られる。
             var user = await Utils.GetUser(httpContext, connection, txn);
@@ -1095,6 +1098,7 @@ VALUES (@id, @CarNumber, @Row, @Column)";
         {
             var str = configuration.GetConnectionString("Isucon9");
             using var connection = new MySqlConnection(str);
+            await connection.OpenAsync();
             using var txn = await connection.BeginTransactionAsync();
             
             // 予約IDで検索
@@ -1135,12 +1139,16 @@ VALUES (@id, @CarNumber, @Row, @Column)";
             PaymentResponseModel output;
             try
             {
-                var payInfo = new PaymentInformationRequestModel
-                {
-                    CardToken = req.CardToken,
-                    ReservationId = req.ReservationId,
-                    Amount = reservation.Amount
+                var payInfo = new PaymentInformationModel 
+                { 
+                    PayInfo = new PaymentInformationRequestModel
+                    {
+                        CardToken = req.CardToken,
+                        ReservationId = req.ReservationId,
+                        Amount = reservation.Amount
+                    }
                 };
+                
                 var paymentApi = Environment.GetEnvironmentVariable("PAYMENT_API") ?? "http://payment:5000";
                 var res = await httpClient.PostAsync($"{paymentApi}/payment", new StringContent(JsonSerializer.Serialize(payInfo), Encoding.UTF8, @"application/json"));
                 if ((int)res.StatusCode != StatusCodes.Status200OK)
@@ -1152,7 +1160,7 @@ VALUES (@id, @CarNumber, @Row, @Column)";
                 using var contentStream = await res.Content.ReadAsStreamAsync();
                 output = await JsonSerializer.DeserializeAsync<PaymentResponseModel>(contentStream);
             }
-            catch (Exception e)
+            catch (Exception e) when (!(e is HttpResponseException))
             {
                 await txn.RollbackAsync();
                 throw new HttpResponseException(StatusCodes.Status500InternalServerError, "HTTP POSTに失敗しました", e);

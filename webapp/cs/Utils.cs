@@ -82,7 +82,6 @@ namespace cs
                 if (txn != null) await txn.RollbackAsync();
                 throw new HttpResponseException(StatusCodes.Status401Unauthorized,"no session", e);
             }
-            connection.Open();
             try
             {
                 var user = await connection.QueryFirstOrDefaultAsync<UserModel>(

@@ -33,11 +33,11 @@ namespace cs.Controllers
         {
             try
             {
-                var departure = await connection.QuerySingleAsync<string>("SELECT departure FROM train_timetable_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName AND station=@Departure",
+                var departure = await connection.QuerySingleAsync<TimeSpan>("SELECT departure FROM train_timetable_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName AND station=@Departure",
                     new { Date = reservation.Date.ToString("yyyy-MM-dd"), reservation.TrainClass, reservation.TrainName, reservation.Departure });
 
-                var arrival = await connection.QuerySingleAsync<string>("SELECT departure FROM train_timetable_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName AND station=@Arrival",
-                    new { Date = reservation.Date.ToString("yyyy-MM-dd"), reservation.TrainClass, reservation.TrainName, reservation.Departure });
+                var arrival = await connection.QuerySingleAsync<TimeSpan>("SELECT departure FROM train_timetable_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName AND station=@Arrival",
+                    new { Date = reservation.Date.ToString("yyyy-MM-dd"), reservation.TrainClass, reservation.TrainName, reservation.Arrival });
 
                 var reservationResponse = new ReservationResponseModel
                 {
@@ -50,8 +50,8 @@ namespace cs.Controllers
                     Arrival = reservation.Arrival,
                     TrainClass = reservation.TrainClass,
                     TrainName = reservation.TrainName,
-                    DepartureTime = departure,
-                    ArrivalTime = arrival
+                    DepartureTime = departure.ToString("c"),
+                    ArrivalTime = arrival.ToString("c")
                 };
 
                 var query = "SELECT * FROM seat_reservations WHERE reservation_id=@ReservationId";
@@ -96,7 +96,7 @@ namespace cs.Controllers
         {
             var str = configuration.GetConnectionString("Isucon9");
             using var connection = new MySqlConnection(str);
-
+            await connection.OpenAsync();
             var user = await Utils.GetUser(httpContext, connection);
             IEnumerable<ReservationModel> reservationList;
             try
@@ -117,12 +117,12 @@ namespace cs.Controllers
             return reservationResponseList.ToArray();
         }
 
-        [HttpGet("/{id}")]
+        [HttpGet("{itemID}")]
         public async Task<ReservationResponseModel> Get([FromRoute]long itemID)
         {
             var str = configuration.GetConnectionString("Isucon9");
             using var connection = new MySqlConnection(str);
-
+            await connection.OpenAsync();
             var user = await Utils.GetUser(httpContext, connection);
 
             if (itemID < 0)
@@ -136,25 +136,25 @@ namespace cs.Controllers
                 var query = "SELECT * FROM reservations WHERE reservation_id=@itemID AND user_id=@ID";
                 reservation = await connection.QuerySingleOrDefaultAsync<ReservationModel>(query,
                     new { itemID, user.ID });
-                if (reservation == null)
-                {
-                    throw new HttpResponseException(StatusCodes.Status404NotFound, "Reservation not found");
-                }
             }
             catch (Exception e)
             {
                 throw new HttpResponseException(StatusCodes.Status400BadRequest, e);
             }
+            if (reservation == null)
+            {
+                throw new HttpResponseException(StatusCodes.Status404NotFound, "Reservation not found");
+            }
 
             return await ConstructReservation(connection, reservation);
         }
 
-        [HttpPost("/{id}/cancel")]
+        [HttpPost("{itemID}/cancel")]
         public async Task<MessageResponseModel> Cancel([FromRoute]long itemID)
         {
             var str = configuration.GetConnectionString("Isucon9");
             using var connection = new MySqlConnection(str);
-
+            await connection.OpenAsync();
             var user = await Utils.GetUser(httpContext, connection);
 
             if (itemID < 0)
@@ -196,7 +196,7 @@ namespace cs.Controllers
                         var res = await paymentClient.SendAsync(new HttpRequestMessage
                         {
                             Method = HttpMethod.Delete,
-                            RequestUri = new Uri($"{payInfo}/payment/{reservation.PaymentId}"),
+                            RequestUri = new Uri($"{paymentApi}/payment/{reservation.PaymentId}"),
                             Content = new StringContent(JsonSerializer.Serialize(payInfo), Encoding.UTF8, @"application/json")
                         });
 

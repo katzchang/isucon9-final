@@ -46,7 +46,7 @@ namespace cs.Controllers
         public int ID { get; set; }
         [JsonPropertyName("name")]
         public string Name { get; set; }
-        [JsonPropertyName("distance")]
+        [JsonIgnore]
         public double Distance { get; set; }
         [JsonPropertyName("is_stop_express")]
         public bool IsStopExpress { get; set; }

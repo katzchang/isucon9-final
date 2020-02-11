@@ -14,6 +14,7 @@ namespace cs
     {
         if (context.Exception is HttpResponseException exception)
         {
+            Console.WriteLine(exception);
             context.Result = new ObjectResult(new 
             {
                 is_error = true,

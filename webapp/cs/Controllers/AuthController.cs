@@ -31,6 +31,7 @@ namespace cs.Controllers
         {
             var str = configuration.GetConnectionString("Isucon9");
             using var connection = new MySqlConnection(str);
+            await connection.OpenAsync();
             var user = await Utils.GetUser(httpContext, connection);
             return new AuthResponseModel
             {
