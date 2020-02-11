@@ -62,6 +62,14 @@ namespace cs
             return usable.Values.ToArray();
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="httpContext"></param>
+        /// <param name="connection"></param>
+        /// <param name="txn"></param>
+        /// <returns></returns>
+        /// <exception cref="HttpResponseException"/>
         public static async Task<UserModel> GetUser(HttpContext httpContext, MySqlConnection connection, MySqlTransaction txn = null)
         {
             long userID;

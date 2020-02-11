@@ -8,6 +8,10 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.AspNetCore.Http;
 using cs.Models;
+using System.Net.Http;
+using System.Text;
+using Microsoft.AspNetCore.Mvc.Formatters;
+using System.Text.Json;
 
 namespace cs.Controllers
 {
@@ -15,8 +19,10 @@ namespace cs.Controllers
     [Route("api/[controller]")]
     public class TrainController
     {
+        private static readonly HttpClient httpClient = new HttpClient();
         private readonly IConfiguration configuration;
         private readonly HttpContext httpContext;
+
 
         public TrainController(IConfiguration configuration, IHttpContextAccessor httpContextAccessor)
         {
@@ -1072,11 +1078,101 @@ VALUES (@id, @CarNumber, @Row, @Column)";
             };
         }
 
+        /// <summary>
+        /// 支払い及び予約確定API
+        /// POST /api/train/reservation/commit
+        /// {
+        /// 	"card_token": "161b2f8f-791b-4798-42a5-ca95339b852b",
+        /// 	"reservation_id": "1"
+        /// }
+        /// 前段でフロントがクレカ非保持化対応用のpayment-APIを叩き、card_tokenを手に入れている必要がある
+        /// 
+        /// </summary>
+        /// <returns>レスポンスは成功か否かのみ返す</returns>
         [HttpPost("reservation/commit")]
-        public async Task<ActionResult> CommitReservation()
+        public async Task<ReservationPaymentResponseModel> CommitReservation(
+            [FromBody] ReservationPaymentRequestModel req)
         {
-            var api = Environment.GetEnvironmentVariable("PAYMENT_API") ?? "http://localhost:5000";
-            return null;
+            var str = configuration.GetConnectionString("Isucon9");
+            using var connection = new MySqlConnection(str);
+            using var txn = await connection.BeginTransactionAsync();
+            
+            // 予約IDで検索
+            ReservationModel reservation;
+            try
+            {
+                var query = "SELECT * FROM reservations WHERE reservation_id=?";
+                reservation = await connection.QuerySingleOrDefaultAsync<ReservationModel>(query, new { req.ReservationId });
+                if (reservation == null)
+                {
+                    await txn.RollbackAsync();
+                    throw new HttpResponseException(StatusCodes.Status404NotFound, "予約情報がみつかりません");
+                }
+            }
+            catch (Exception e)
+            {
+                await txn.RollbackAsync();
+                throw new HttpResponseException(StatusCodes.Status404NotFound, "予約情報の取得に失敗しました", e);
+            }
+
+            // 支払い前のユーザチェック。本人以外のユーザの予約を支払ったりキャンセルできてはいけない。
+            var user = await Utils.GetUser(httpContext, connection, txn);
+            if (reservation.UserId != user.ID)
+            {
+                throw new HttpResponseException(StatusCodes.Status403Forbidden, "他のユーザIDの支払いはできません");
+            }
+
+            switch (reservation.Status)
+            {
+                case "done":
+                    await txn.RollbackAsync();
+                    throw new HttpResponseException(StatusCodes.Status403Forbidden, "既に支払いが完了している予約IDです");
+                default:
+                    break;
+            }
+
+            // 決済する
+            PaymentResponseModel output;
+            try
+            {
+                var payInfo = new PaymentInformationRequestModel
+                {
+                    CardToken = req.CardToken,
+                    ReservationId = req.ReservationId,
+                    Amount = reservation.Amount
+                };
+                var paymentApi = Environment.GetEnvironmentVariable("PAYMENT_API") ?? "http://payment:5000";
+                var res = await httpClient.PostAsync($"{paymentApi}/payment", new StringContent(JsonSerializer.Serialize(payInfo), Encoding.UTF8, @"application/json"));
+                if ((int)res.StatusCode != StatusCodes.Status200OK)
+                {
+                    await txn.RollbackAsync();
+                    Console.WriteLine(res.StatusCode);
+                    throw new HttpResponseException(StatusCodes.Status500InternalServerError, "決済に失敗しました。カードトークンや支払いIDが間違っている可能性があります");
+                }
+                using var contentStream = await res.Content.ReadAsStreamAsync();
+                output = await JsonSerializer.DeserializeAsync<PaymentResponseModel>(contentStream);
+            }
+            catch (Exception e)
+            {
+                await txn.RollbackAsync();
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "HTTP POSTに失敗しました", e);
+            }
+
+            // 予約情報の更新
+            try
+            {
+                var query = "UPDATE reservations SET status=@Status, payment_id=@PaymentId WHERE reservation_id=@ReservationId";
+                await connection.ExecuteAsync(query, new { Status="done", output.PaymentId, req.ReservationId});
+            }
+            catch (Exception e)
+            {
+                await txn.RollbackAsync();
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "予約情報の更新に失敗しました", e);
+            }
+
+            await txn.CommitAsync();
+
+            return new ReservationPaymentResponseModel { IsOk = true };
         }
 
         private async Task<int> FareCalc(DateTimeOffset date, int depStation, int destStation, string trainClass, string seatClass, MySqlConnection connection)
