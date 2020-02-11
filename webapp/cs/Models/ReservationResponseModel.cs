@@ -35,7 +35,7 @@ namespace cs.Models
         [JsonPropertyName("arrival_time")]
         public string ArrivalTime { get; set; }
         [JsonPropertyName("seats")]
-        public SeatReservationModel Seats { get; set; }
+        public SeatReservationModel[] Seats { get; set; }
 
     }
 }

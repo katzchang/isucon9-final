@@ -27,19 +27,19 @@ namespace cs.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult> GetAuth()
+        public async Task<AuthResponseModel> GetAuth()
         {
             var str = configuration.GetConnectionString("Isucon9");
             using var connection = new MySqlConnection(str);
             var user = await Utils.GetUser(httpContext, connection);
-            return new OkObjectResult(new AuthResponseModel
+            return new AuthResponseModel
             {
                 Email = user.Email
-            });
+            };
         }
 
         [HttpPost("Signup")]
-        public async Task<ActionResult> Signup(UserModel user)
+        public async Task<MessageResponseModel> Signup(UserModel user)
         {
             var salt = new byte[1024];
             using (var rng = new RNGCryptoServiceProvider())
@@ -69,15 +69,11 @@ namespace cs.Controllers
                     throw new HttpResponseException(StatusCodes.Status500InternalServerError, "user registration failed", e);
                 }
             }
-            return new OkObjectResult(new 
-            {
-                is_error = false,
-                message = "registration complete"
-            });
+            return new MessageResponseModel("registration complete");
         }
 
         [HttpPost("login")]
-        public async Task<ActionResult> Login(UserModel postUser)
+        public async Task<MessageResponseModel> Login(UserModel postUser)
         {
             Console.WriteLine($"login... {postUser.Email} {postUser.Password}");
             var str = configuration.GetConnectionString("Isucon9");
@@ -108,15 +104,11 @@ namespace cs.Controllers
                     throw new HttpResponseException(StatusCodes.Status500InternalServerError, "session error", e);
                 }
             }
-            return new OkObjectResult(new 
-            {
-                is_error = false,
-                message = "autheticated"
-            });
+            return new MessageResponseModel("autheticated");
         }
 
         [HttpPost("logout")]
-        public async Task<ActionResult> Logout()
+        public async Task<MessageResponseModel> Logout()
         {
             try
             {
@@ -127,11 +119,7 @@ namespace cs.Controllers
             {
                 throw new HttpResponseException(StatusCodes.Status500InternalServerError, "session error", e);
             }
-            return new OkObjectResult(new 
-            {
-                is_error = false,
-                message = "logged out"
-            });
+            return new MessageResponseModel("logged out");
         }
     }
 
