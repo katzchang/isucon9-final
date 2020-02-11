@@ -8,5 +8,7 @@ namespace cs.Models
         public int Row { get; set; }
         [JsonPropertyName("column")] //TODOここだけ大文字?
         public string Column { get; set; }
+
+        public override string ToString() => $"{{{Row} {Column}}}";
     }
 }

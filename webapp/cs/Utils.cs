@@ -1,4 +1,8 @@
 ﻿using cs.Controllers;
+using cs.Models;
+using Dapper;
+using Microsoft.AspNetCore.Http;
+using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -56,6 +60,38 @@ namespace cs
                 usable.Remove("local");
             }
             return usable.Values.ToArray();
+        }
+
+        public static async Task<UserModel> GetUser(HttpContext httpContext, MySqlConnection connection, MySqlTransaction txn = null)
+        {
+            long userID;
+            try
+            {
+                userID = BitConverter.ToInt64(httpContext.Session.Get("user_id"));
+            }
+            catch (Exception e)
+            {
+                if (txn != null) await txn.RollbackAsync();
+                throw new HttpResponseException(StatusCodes.Status401Unauthorized,"no session", e);
+            }
+            connection.Open();
+            try
+            {
+                var user = await connection.QueryFirstOrDefaultAsync<UserModel>(
+                    "SELECT * FROM `users` WHERE `id` = @id",
+                new { id = userID });
+                if (user == null)
+                {
+                    if (txn != null) await txn.RollbackAsync();
+                    throw new HttpResponseException(StatusCodes.Status401Unauthorized, "user not found");
+                }
+                return user;
+            }
+            catch (Exception e)
+            {
+                if (txn != null) await txn.RollbackAsync();
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "db error", e);
+            }
         }
     }
 }

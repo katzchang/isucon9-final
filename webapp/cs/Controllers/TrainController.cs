@@ -16,10 +16,12 @@ namespace cs.Controllers
     public class TrainController
     {
         private readonly IConfiguration configuration;
+        private readonly HttpContext httpContext;
 
-        public TrainController(IConfiguration configuration)
+        public TrainController(IConfiguration configuration, IHttpContextAccessor httpContextAccessor)
         {
             this.configuration = configuration;
+            httpContext = httpContextAccessor.HttpContext;
         }
 
         /// <summary>
@@ -36,7 +38,7 @@ namespace cs.Controllers
         /// 発駅と着駅の到着時刻
         /// </returns>
         [HttpGet("search")]
-        public async Task<ActionResult> Search(
+        public async Task<TrainSearchResponseModel[]> Search(
             [FromQuery(Name = "use_at")]string useAt, [FromQuery]string from, [FromQuery]string to,
             [FromQuery(Name = "train_class")]string trainClass, [FromQuery]int adult, [FromQuery]int child)
         {
@@ -77,7 +79,7 @@ namespace cs.Controllers
             }
             catch (Exception e)
             {
-                return new ObjectResult(e) { StatusCode = StatusCodes.Status500InternalServerError };
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, e);
             }
             try
             {
@@ -304,7 +306,7 @@ WHERE
                     }
                 }
             }
-            return new OkObjectResult(trainSearchResponseList);
+            return trainSearchResponseList.ToArray();
         }
 
         /// <summary>
@@ -313,7 +315,7 @@ WHERE
         /// </summary>
         /// <returns></returns>
         [HttpGet("seat")]
-        public async Task<ActionResult> ListSeat(
+        public async Task<CarInformationModel> ListSeat(
             [FromQuery(Name ="date")]string dateString, [FromQuery(Name = "train_class")]string trainClass,
             [FromQuery(Name = "train_name")]string trainName, [FromQuery(Name = "car_number")]int carNumber,
             [FromQuery(Name = "from")]string fromName, [FromQuery(Name = "to")]string toName)
@@ -445,7 +447,7 @@ WHERE
                     }
                 }
 
-                return new OkObjectResult(new CarInformationModel
+                return new CarInformationModel
                 {
                     Date = date.ToString("yyyy/MM/dd"),
                     TrainClass = trainClass,
@@ -453,7 +455,7 @@ WHERE
                     CarNumber = carNumber,
                     SeatInformationList = seatInformationList.ToArray(),
                     Cars = simpleCarInformationList.ToArray()
-                });
+                };
             }
             catch (Exception e)
             {
@@ -461,11 +463,613 @@ WHERE
             }
         }
 
+        /// <summary>
+        /// 列車の席予約API　支払いはまだ
+        /// POST /api/train/reserve
+        /// {
+		///		"date": "2020-12-31T07:57:00+09:00",
+		///		"train_name": "183",
+		///		"train_class": "中間",
+		///		"car_number": 7,
+		///		"is_smoking_seat": false,
+		///		"seat_class": "reserved",
+		///		"departure": "東京",
+		///		"arrival": "名古屋",
+		///		"child": 2,
+		///		"adult": 1,
+		///		"column": "A",
+		///		"seats": [
+		///			{
+		///			"row": 3,
+		///			"column": "B"
+        ///
+        ///           },
+		///				{
+		///			"row": 4,
+		///			"column": "C"
+		///			}
+		///		]
+		///}
+		///レスポンスで予約IDを返す
+        ///reservationResponse(w http.ResponseWriter, errCode int, id int, ok bool, message string)
+        /// </summary>
+        /// <returns></returns>
         [HttpPost("reserve")]
-        public async Task<ActionResult> Reserve()
+        public async Task<TrainReservationResponseModel> Reserve([FromBody]TrainReservationRequestModel req)
         {
-            var api = Environment.GetEnvironmentVariable("PAYMENT_API") ?? "http://localhost:5000";
-            return null;
+            // 乗車日の日付表記統一
+            DateTimeOffset date;
+            try
+            {
+                var d = DateTimeOffset.Parse(req.Date);
+                date = TimeZoneInfo.ConvertTime(d, Utils.TokyoStandardTimeZone);
+            }
+            catch (Exception e)
+            {
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, e);
+            }
+
+            if (!Utils.CheckAvailableDate(date))
+            {
+                throw new HttpResponseException(StatusCodes.Status404NotFound, "予約可能期間外です");
+            }
+
+            var str = configuration.GetConnectionString("Isucon9");
+            using var connection = new MySqlConnection(str);
+            using var txn = await connection.BeginTransactionAsync();
+
+            var query = "SELECT * FROM train_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName";
+            TrainModel tmas;
+            try
+            {
+                tmas = await connection.QuerySingleOrDefaultAsync<TrainModel>(query,
+                    new { Date = date.ToString("yyyy-MM-dd"), req.TrainClass, req.TrainName });
+                if (tmas == null)
+                    throw new HttpResponseException(StatusCodes.Status404NotFound, "列車データがみつかりません");
+            }
+            catch (Exception e)
+            {
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "列車データの取得に失敗しました", e);
+            }
+
+            // 列車自体の駅IDを求める
+            StationModel departureStation, arrivalStation;
+            query = "SELECT * FROM station_master WHERE name=@Name";
+            try
+            {
+                departureStation = await connection.QuerySingleOrDefaultAsync<StationModel>(query, new { Name = tmas.StartStation });
+                if (tmas == null)
+                    throw new HttpResponseException(StatusCodes.Status404NotFound, "リクエストされた列車の始発駅データがみつかりません");
+            }
+            catch (Exception e)
+            {
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "リクエストされた列車の始発駅データの取得に失敗しました", e);
+            }
+            try
+            {
+                arrivalStation = await connection.QuerySingleOrDefaultAsync<StationModel>(query, new { Name = tmas.LastStation });
+                if (tmas == null)
+                    throw new HttpResponseException(StatusCodes.Status404NotFound, "リクエストされた列車の終着駅データがみつかりません");
+            }
+            catch (Exception e)
+            {
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "リクエストされた列車の終着駅データの取得に失敗しました", e);
+            }
+
+            // リクエストされた乗車区間の駅IDを求める
+            StationModel fromStation, toStation;
+            try
+            {
+                fromStation = await connection.QuerySingleOrDefaultAsync<StationModel>(query, new { Name = req.Departure });
+                if (tmas == null)
+                    throw new HttpResponseException(StatusCodes.Status404NotFound, $"乗車駅データがみつかりません {req.Departure}");
+            }
+            catch (Exception e)
+            {
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "乗車駅データの取得に失敗しました", e);
+            }
+            try
+            {
+                toStation = await connection.QuerySingleOrDefaultAsync<StationModel>(query, new { Name = req.Arrival });
+                if (tmas == null)
+                    throw new HttpResponseException(StatusCodes.Status404NotFound, $"降車駅データがみつかりません {req.Arrival}");
+            }
+            catch (Exception e)
+            {
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "降車駅データの取得に失敗しました", e);
+            }
+
+            switch (req.TrainClass)
+            {
+                case "最速":
+                    if (!fromStation.IsStopExpress || !toStation.IsStopExpress)
+                    {
+                        await txn.RollbackAsync();
+                        throw new HttpResponseException(StatusCodes.Status400BadRequest, "最速の止まらない駅です");
+                    }
+                    break;
+                case "中間":
+                    if (!fromStation.IsStopSemiExpress || !toStation.IsStopSemiExpress)
+                    {
+                        await txn.RollbackAsync();
+                        throw new HttpResponseException(StatusCodes.Status400BadRequest, "中間の止まらない駅です");
+                    }
+                    break;
+                case "遅いやつ":
+                    if (!fromStation.IsStopLocal || !toStation.IsStopLocal)
+                    {
+                        await txn.RollbackAsync();
+                        throw new HttpResponseException(StatusCodes.Status400BadRequest, "遅いやつの止まらない駅です");
+                    }
+                    break;
+                default:
+                    await txn.RollbackAsync();
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, "リクエストされた列車クラスが不明です");
+            }
+
+            // 運行していない区間を予約していないかチェックする
+            if (tmas.IsNobori)
+            {
+                if (fromStation.ID > departureStation.ID || toStation.ID > departureStation.ID)
+                {
+                    await txn.RollbackAsync();
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, "リクエストされた区間に列車が運行していない区間が含まれています");
+                }
+                if (arrivalStation.ID >= fromStation.ID || arrivalStation.ID > toStation.ID)
+                {
+                    await txn.RollbackAsync();
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, "リクエストされた区間に列車が運行していない区間が含まれています");
+                }
+            }
+            else
+            {
+                if (fromStation.ID < departureStation.ID || toStation.ID < departureStation.ID)
+                {
+                    await txn.RollbackAsync();
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, "リクエストされた区間に列車が運行していない区間が含まれています");
+                }
+                if (arrivalStation.ID <= fromStation.ID || arrivalStation.ID < toStation.ID)
+                {
+                    await txn.RollbackAsync();
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, "リクエストされた区間に列車が運行していない区間が含まれています");
+                }
+            }
+
+            /*
+		        あいまい座席検索
+		        seatsが空白の時に発動する
+	        */
+            switch (req.Seats.Count())
+            {
+                case 0:
+                    if (req.SeatClass == "non-reserved")
+                    {
+                        break; // non-reservedはそもそもあいまい検索もせずダミーのRow/Columnで予約を確定させる。
+                    }
+                    //当該列車・号車中の空き座席検索
+                    try
+                    {
+                        query = "SELECT * FROM train_master WHERE date=@Date AND train_class=@TrainCalss AND train_name=@TrainName";
+                        var train = await connection.QueryFirstOrDefaultAsync<TrainModel>(query,
+                            new { Date = date.ToString("yyyy-MM-dd"), req.TrainClass, req.TrainName });
+                        if (train == null)
+                            throw new Exception(); //panicの再現
+
+                        var usableTrainClassList = Utils.GetUsableTrainClassList(fromStation, toStation);
+                        var usable = false;
+                        foreach (var v in usableTrainClassList)
+                        {
+                            if (v == train.TrainClass)
+                            {
+                                usable = true;
+                            }
+                        }
+
+                        if (!usable)
+                        {
+                            await txn.RollbackAsync();
+                            throw new HttpResponseException(StatusCodes.Status400BadRequest, "invalid train_class");
+                        }
+
+                        req.Seats = new List<RequestSeatModel>();
+                        for (int carnum = 0; carnum < 16; carnum++)
+                        {
+                            query = "SELECT * FROM seat_master WHERE train_class=@TrainClass AND car_number=@carnum AND seat_class=@SeatClass AND is_smoking_seat=@IsSmokingSeat ORDER BY seat_row, seat_column";
+                            var seatList = await connection.QueryAsync<SeatModel>(query,
+                                new { req.TrainClass, carnum, req.SeatClass, req.IsSmokingSeat });
+
+                            var seatInformationList = new List<SeatInformationModel>();
+                            foreach (var seat in seatList)
+                            {
+                                var s = new SeatInformationModel
+                                {
+                                    Row = seat.SeatRow,
+                                    Column = seat.SeatColumn,
+                                    Class = seat.SeatClass,
+                                    IsSmokingSeat = seat.IsSmokingSeat,
+                                    IsOccupied = false
+                                };
+
+                                query = "SELECT s.* FROM seat_reservations s, reservations r WHERE r.date=@Date AND r.train_class=@TrainClass AND r.train_name=@TrainName AND car_number=@CarNumber AND seat_row=@SeatRow AND seat_column=@SeatColumn FOR UPDATE";
+                                var seatReservationList = await connection.QueryAsync<SeatReservationModel>(query,
+                                    new {Date= date.ToString("yyyy-MM-dd"), seat.TrainClass, req.TrainName, seat.CarNumber, seat.SeatRow, seat.SeatColumn });
+
+                                foreach (var seatReservation in seatReservationList)
+                                {
+                                    query = "SELECT * FROM reservations WHERE reservation_id=@ReservationId FOR UPDATE";
+                                    var reservation = await connection.QuerySingleAsync<ReservationModel>(query, new { seatReservation.ReservationId});
+
+                                    query = "SELECT * FROM station_master WHERE name=@Name";
+                                    var departureStation2 = await connection.QuerySingleAsync<StationModel>(query, new { Name = reservation.Departure});
+                                    var arrivalStation2 = await connection.QuerySingleAsync<StationModel>(query, new { Name = reservation.Arrival});
+                                    if (train.IsNobori)
+                                    {
+                                        if (toStation.ID < arrivalStation2.ID && fromStation.ID <= arrivalStation2.ID)
+                                        {
+                                            // pass
+                                        }
+                                        else if (toStation.ID >= departureStation2.ID && fromStation.ID > departureStation2.ID)
+                                        {
+                                            // pass
+                                        }
+                                        else
+                                        {
+                                            s.IsOccupied = true;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if (fromStation.ID < departureStation2.ID && toStation.ID <= departureStation2.ID)
+                                        {
+                                            // pass
+                                        }
+                                        else if (fromStation.ID >= arrivalStation2.ID && toStation.ID > arrivalStation2.ID)
+                                        {
+                                            // pass
+                                        }
+                                        else
+                                        {
+                                            s.IsOccupied = true;
+                                        }
+                                    }
+                                }
+                                seatInformationList.Add(s);
+                            }
+
+                            // 曖昧予約席とその他の候補席を選出
+                            var reserved = false; // あいまい指定席確保済フラグ
+                            var vargue = true; // あいまい検索フラグ
+                            var seatnum = (req.Adult + req.Child - 1);// 予約する座席の合計数。全体の人数からあいまい指定席分を引いておく
+                            var vagueSeat = new RequestSeatModel();
+                            if (req.Column == "") // A/B/C/D/Eを指定しなければ、空いている適当な指定席を取るあいまいモード
+                            {
+                                seatnum = (req.Adult + req.Child); // あいまい指定せず大人＋小人分の座席を取る
+                                reserved = true; // dummy
+                                vargue = false;  // dummy
+                            }
+                                                        
+                            var candidateSeats = new List<RequestSeatModel>();
+                            // シート分だけ回して予約できる席を検索
+                            var i = 0;
+                            foreach (var seat in seatInformationList)
+                            {
+                                // あいまい席があいてる
+                                if (seat.Column == req.Column && !seat.IsOccupied && !reserved && vargue)
+                                {
+                                    vagueSeat.Row = seat.Row;
+                                    vagueSeat.Column = seat.Column;
+                                    reserved = true;
+                                }
+                                // 単に席があいてる
+                                else if (!seat.IsOccupied && i < seatnum)
+                                {
+                                    candidateSeats.Add(new RequestSeatModel
+                                    {
+                                        Row = seat.Row,
+                                        Column = seat.Column
+                                    });
+                                    i++;
+                                }
+                            }
+
+                            // あいまい席が見つかり、予約できそうだった
+                            if (vargue && reserved)
+                            {
+                                // あいまい予約席を追加
+                                req.Seats.Add(vagueSeat);
+                            }
+
+                            // 候補席があった
+                            if (i > 0)
+                            {
+                                // 予約候補席追加
+                                req.Seats.AddRange(candidateSeats);
+                            }
+
+                            if (req.Seats.Count() < req.Adult + req.Child)
+                            {
+                                // リクエストに対して席数が足りてない
+                                // 次の号車にうつしたい
+                                Console.WriteLine("-----------------");
+                                Console.WriteLine($"現在検索中の車両: {carnum}号車, リクエスト座席数: {req.Adult + req.Child}, 予約できそうな座席数: {req.Seats.Count()}, 不足数: {req.Adult + req.Child-req.Seats.Count()}");
+                                Console.WriteLine("リクエストに対して座席数が不足しているため、次の車両を検索します。");
+                                req.Seats = new List<RequestSeatModel>();
+                                if (carnum == 16)
+                                {
+                                    Console.WriteLine("この新幹線にまとめて予約できる席数がなかったから検索をやめるよ");
+                                    req.Seats = new List<RequestSeatModel>();
+                                    break;
+                                }
+                            }
+                            Console.WriteLine($"空き実績: {carnum}号車 シート:{string.Join(",", req.Seats)} 席数:{req.Seats.Count()}");
+                            if (req.Seats.Count() >= req.Adult + req.Child)
+                            {
+                                Console.WriteLine("予約情報に追加したよ");
+                                req.Seats.Take(req.Adult + req.Child).ToList();
+                                req.CarNumber = carnum;
+                                break;
+                            }
+                        }
+                        if (req.Seats.Count() == 0)
+                        {
+                            await txn.RollbackAsync();
+                            throw new HttpResponseException(StatusCodes.Status404NotFound, "あいまい座席予約ができませんでした。指定した席、もしくは1車両内に希望の席数をご用意できませんでした。");
+                        }
+                    }
+                    catch (Exception e) when (!(e is HttpResponseException))
+                    {
+                        await txn.RollbackAsync();
+                        throw new HttpResponseException(StatusCodes.Status400BadRequest, e);
+                    }
+                    break;
+                default:
+                    // 座席情報のValidate
+                    var seatLisT = new List<SeatModel>();
+                    foreach (var z in req.Seats)
+                    {
+                        Console.WriteLine($"xxxx {z}");
+                        query = "SELECT * FROM seat_master WHERE train_class=@TrainClass AND car_number=CarNumber AND seat_column=@Column AND seat_row=@Row AND seat_class=@SeatClass";
+                        var seat = await connection.QuerySingleOrDefaultAsync<SeatModel>(query,
+                            new { req.TrainClass, req.CarNumber, z.Column, z.Row, req.SeatClass,});
+                        if (seat == null)
+                        {
+                            await txn.RollbackAsync();
+                            throw new HttpResponseException(StatusCodes.Status404NotFound, "リクエストされた座席情報は存在しません。号車・喫煙席・座席クラスなど組み合わせを見直してください");
+                        }
+                    }
+                    break;
+            }
+
+            // 当該列車・列車名の予約一覧取得
+            query = "SELECT * FROM reservations WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName FOR UPDATE";
+            IEnumerable<ReservationModel> reservartions;
+            try
+            {
+                reservartions = await connection.QueryAsync<ReservationModel>(query,
+                    new { Date = date.ToString("yyyy-MM-dd"), req.TrainClass, req.TrainName });
+            }
+            catch (Exception e)
+            {
+                throw new HttpResponseException(StatusCodes.Status500InternalServerError, "列車予約情報の取得に失敗しました", e);
+            }
+
+            foreach (var reservation in reservartions)
+            {
+                if (req.SeatClass == "non-reserved")
+                {
+                    break;
+                }
+                // train_masterから列車情報を取得(上り・下りが分かる)
+                query = "SELECT * FROM train_master WHERE date=@Date AND train_class=@TrainClass AND train_name=@TrainName";
+                try
+                {
+                    tmas = await connection.QuerySingleOrDefaultAsync<TrainModel>(query,
+                            new { Date = date.ToString("yyyy-MM-dd"), req.TrainClass, req.TrainName });
+                    if (tmas == null)
+                    {
+                        throw new HttpResponseException(StatusCodes.Status404NotFound, "列車データがみつかりません");
+                    }
+                }
+                catch (Exception e)
+                {
+                    throw new HttpResponseException(StatusCodes.Status500InternalServerError, "列車データの取得に失敗しました", e);
+                }
+
+                // 予約情報の乗車区間の駅IDを求める
+                StationModel reservedfromStation, reservedtoStation;
+                query = "SELECT * FROM station_master WHERE name=@Name";
+                try
+                {
+                    reservedfromStation = await connection.QuerySingleOrDefaultAsync<StationModel>(query,
+                            new { Name = reservation.Departure });
+                    if (tmas == null)
+                    {
+                        throw new HttpResponseException(StatusCodes.Status404NotFound, "予約情報に記載された列車の乗車駅データがみつかりません");
+                    }
+                }
+                catch (Exception e)
+                {
+                    throw new HttpResponseException(StatusCodes.Status500InternalServerError, "予約情報に記載された列車の乗車駅データの取得に失敗しました", e);
+                }
+                try
+                {
+                    reservedtoStation = await connection.QuerySingleOrDefaultAsync<StationModel>(query,
+                            new { Name = reservation.Arrival });
+                    if (tmas == null)
+                    {
+                        throw new HttpResponseException(StatusCodes.Status404NotFound, "予約情報に記載された列車の降車駅データがみつかりません");
+                    }
+                }
+                catch (Exception e)
+                {
+                    throw new HttpResponseException(StatusCodes.Status500InternalServerError, "予約情報に記載された列車の降車駅データの取得に失敗しました", e);
+                }
+
+                // 予約の区間重複判定
+                var secdup = false;
+                if (tmas.IsNobori)
+                {
+                    // 上り
+                    if (toStation.ID < reservedtoStation.ID && fromStation.ID <= reservedtoStation.ID)
+                    {
+                        // pass
+                    }
+                    else if (toStation.ID >= reservedfromStation.ID && fromStation.ID > reservedfromStation.ID)
+                    {
+                        // pass
+                    }
+                    else
+                    {
+                        secdup = true;
+                    }
+                }
+                else
+                {
+                    // 下り
+                    if (fromStation.ID < reservedfromStation.ID && toStation.ID <= reservedfromStation.ID)
+                    {
+                        // pass
+                    }
+                    else if (fromStation.ID >= reservedtoStation.ID && toStation.ID > reservedtoStation.ID)
+                    {
+                        // pass
+                    }
+                    else
+                    {
+                        secdup = true;
+                    }
+                }
+
+                if (secdup)
+                {
+                    // 区間重複の場合は更に座席の重複をチェックする
+                    IEnumerable<SeatReservationModel> seatReservations;
+                    query = "SELECT * FROM seat_reservations WHERE reservation_id=@ReservationId FOR UPDATE";
+                    try
+                    {
+                        seatReservations = await connection.QueryAsync<SeatReservationModel>(query,
+                            new { reservation.ReservationId });
+                    }
+                    catch (Exception e)
+                    {
+                        throw new HttpResponseException(StatusCodes.Status500InternalServerError, "座席予約情報の取得に失敗しました", e);
+                    }
+
+                    foreach (var v in seatReservations)
+                        foreach (var seat in req.Seats)
+                        {
+                            if (v.CarNumber == req.CarNumber && v.SeatRow == seat.Row && v.SeatColumn == seat.Column)
+                            {
+                                await txn.RollbackAsync();
+                                throw new HttpResponseException(StatusCodes.Status400BadRequest, "リクエストに既に予約された席が含まれています");
+                            }
+                        }                    
+                }
+            }
+            // 3段階の予約前チェック終わり
+
+            // 自由席は強制的にSeats情報をダミーにする（自由席なのに席指定予約は不可）
+            if (req.SeatClass == "non-reserved")
+            {
+                req.Seats = new List<RequestSeatModel>();
+                req.CarNumber = 0;
+                for (int num = 0; num < req.Adult + req.Child; num++)
+                {
+                    req.Seats.Add(new RequestSeatModel{ Row = 0, Column = ""});
+                }
+            }
+
+            // 運賃計算
+            async Task<int> FareCalcBySeat(string seatClass)
+            {
+                try
+                {
+                    return await FareCalc(date, fromStation.ID, toStation.ID, req.TrainClass, seatClass, connection);
+                }
+                catch (Exception e)
+                {
+                    await txn.RollbackAsync();
+                    throw new HttpResponseException(StatusCodes.Status400BadRequest, $"fareCalc {e.Message}", e);
+                }
+            }
+            async Task<int> Throw()
+            {
+                await txn.RollbackAsync();
+                throw new HttpResponseException(StatusCodes.Status400BadRequest, "リクエストされた座席クラスが不明です");
+            }
+#pragma warning disable CS8509 // switch 式が入力の種類のうちすべての可能な入力を処理していません (すべてを網羅していません)。
+            var fare = req.SeatClass switch
+#pragma warning restore CS8509 // switch 式が入力の種類のうちすべての可能な入力を処理していません (すべてを網羅していません)。
+            {
+                "premium" => await FareCalcBySeat("premium"),
+                "reserved" => await FareCalcBySeat("reserved"),
+                "non-reserved" => await FareCalcBySeat("non-reserved"),
+                null => await Throw(),
+            };
+            var sumFare = (req.Adult * fare) + (req.Child * fare) / 2;
+            Console.WriteLine("SUMFARE");
+
+            // userID取得。ログインしてないと怒られる。
+            var user = await Utils.GetUser(httpContext, connection, txn);
+
+            //予約ID発行と予約情報登録
+            query = @"
+INSERT INTO `reservations` 
+  (`user_id`, `date`, `train_class`, `train_name`, `departure`, `arrival`, `status`, `payment_id`, `adult`, `child`, `amount`) 
+VALUES 
+  (@ID, @Date, @TrainClass, @TrainName, @Departure, @Arrival, @Status, @PaymentId, @Adult, @Child, @sumFare);
+
+SELECT LAST_INSERT_ID();
+";
+            long id;
+            try
+            {
+                id = await connection.ExecuteScalarAsync<uint>(query,
+                    new
+                    {
+                        user.ID,
+                        Date = date.ToString("yyyy-MM-dd"),
+                        req.TrainClass,
+                        req.TrainName,
+                        req.Departure,
+                        req.Arrival,
+                        Status = "requesting",
+                        PaymentId = "a",
+                        req.Adult,
+                        req.Child,
+                        sumFare
+                    });
+            }
+            catch (Exception e)
+            {
+                await txn.RollbackAsync();
+                throw new HttpResponseException(StatusCodes.Status400BadRequest, "予約の保存に失敗しました。", e);
+            }
+
+            //席の予約情報登録
+            //reservationsレコード1に対してseat_reservationstが1以上登録される
+            query = @"
+INSERT INTO `seat_reservations` (`reservation_id`, `car_number`, `seat_row`, `seat_column`) 
+VALUES (@id, @CarNumber, @Row, @Column)";
+            try
+            {
+                foreach (var v in req.Seats)
+                {
+                    await connection.ExecuteAsync(query, new { id, req.CarNumber, v.Row, v.Column });
+                }
+            }
+            catch (Exception e)
+            {
+                await txn.RollbackAsync();
+                throw new HttpResponseException(StatusCodes.Status400BadRequest, "座席予約の登録に失敗しました。", e);
+            }
+            await txn.CommitAsync();
+            return new TrainReservationResponseModel
+            {
+                ReservationId = id,
+                Amount = sumFare,
+                IsOk = true
+            };
         }
 
         [HttpPost("reservation/commit")]

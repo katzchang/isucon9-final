@@ -30,46 +30,12 @@ namespace cs.Controllers
         public async Task<ActionResult> GetAuth()
         {
             var str = configuration.GetConnectionString("Isucon9");
-            try
+            using var connection = new MySqlConnection(str);
+            var user = await Utils.GetUser(httpContext, connection);
+            return new OkObjectResult(new AuthResponseModel
             {
-                var user = await GetUser(httpContext, str);
-                return new OkObjectResult(new AuthResponseModel
-                {
-                    Email = user.Email
-                });
-            }
-            catch (Exception e)
-            {
-                throw new HttpResponseException(StatusCodes.Status500InternalServerError, e);
-            }
-        }
-
-        internal static async Task<UserModel> GetUser(HttpContext httpContext, string connectionString)
-        {
-            long userID;
-            try
-            {
-                userID = BitConverter.ToInt64(httpContext.Session.Get("user_id"));
-            }
-            catch (Exception e)
-            {
-                throw new Exception("no session", e);
-            }
-            using var connection = new MySqlConnection(connectionString);
-            connection.Open();
-            try
-            {
-                var user = await connection.QueryFirstOrDefaultAsync<UserModel>(
-                    "SELECT * FROM `users` WHERE `id` = @id",
-                new { id = userID });
-                if (user == null)
-                    throw new Exception("user not found");
-                return user;
-            }
-            catch (Exception e)
-            {
-                throw new Exception("db error", e);
-            }
+                Email = user.Email
+            });
         }
 
         [HttpPost("Signup")]

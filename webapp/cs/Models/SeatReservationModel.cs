@@ -13,6 +13,6 @@ namespace cs.Models
         [JsonPropertyName("seat_row")]
         public int SeatRow { get; set; }
         [JsonPropertyName("seat_column")]
-        public int SeatColumn { get; set; }
+        public string SeatColumn { get; set; }
     }
 }

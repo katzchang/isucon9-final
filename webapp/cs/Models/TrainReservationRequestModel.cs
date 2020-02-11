@@ -30,7 +30,9 @@ namespace cs.Models
         public int Child { get; set; }
         [JsonPropertyName("Column")] //TODOここだけ大文字?
         public string Column { get; set; }
-        [JsonPropertyName("seats")] //TODOここだけ大文字?
-        public RequestSeatModel Seats { get; set; }
+        [JsonPropertyName("seats")] 
+        public List<RequestSeatModel> Seats { get; set; }
+
+
     }
 }
