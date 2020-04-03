@@ -22,8 +22,9 @@ namespace cs
                 {"local", "遅いやつ"}
             });
         public static readonly int AvailableDates = 10;
-        //TODO Unixでしか動かない
-        public static readonly TimeZoneInfo TokyoStandardTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo");
+        //クロスプラットフォームで同じタイムゾーン識別IDを使うためにTimeZoneConverterを利用
+        //https://tech.tanaka733.net/entry/2020/02/timezone-id
+        public static readonly TimeZoneInfo TokyoStandardTimeZone = TimeZoneConverter.TZConvert.GetTimeZoneInfo("Asia/Tokyo");
         public static readonly string Language = "C#";
 
         public static bool CheckAvailableDate(DateTimeOffset date)

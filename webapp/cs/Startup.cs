@@ -28,6 +28,7 @@ namespace cs
         {
             services.AddControllers(options =>
                 options.Filters.Add(new HttpResponseExceptionFilter()));
+            //セッションとHttpContextの設定
             services.AddHttpContextAccessor();
             services.AddDistributedMemoryCache();
             services.AddSession(options =>
@@ -38,18 +39,18 @@ namespace cs
                 // Make the session cookie essential
                 options.Cookie.IsEssential = true;
             });
+            //Go言語の参考実装に一致するようにURLを小文字に
             services.Configure<RouteOptions>(options => {
                 options.LowercaseUrls = true;
                 options.LowercaseQueryStrings = true;
             });
+            //DBのテーブルとプロパティのマッチングで_を無視する
             Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
-        {
-            Console.WriteLine(Configuration.GetConnectionString("Isucon9"));
-            
+        {            
             app.UseRouting();
             
             app.UseAuthorization();

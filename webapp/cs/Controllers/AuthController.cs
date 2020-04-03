@@ -13,6 +13,8 @@ using System.Threading.Tasks;
 
 namespace cs.Controllers
 {
+    //パスワードのハッシュ化は暗号論的擬似乱数生成で作成したソルトを使ってPBKDF2で行っている。
+    //C#での実装については https://tech.tanaka733.net/entry/2020/02/secure-random-csharp
     [ApiController]
     [Route("api/[controller]")]
     public class AuthController

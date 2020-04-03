@@ -18,6 +18,7 @@ namespace cs
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
+                //環境変数から接続文字列を生成して設定する
                 .ConfigureAppConfiguration((hostingContext, config) =>
                 {
                     var host = Environment.GetEnvironmentVariable("MYSQL_HOSTNAME");
