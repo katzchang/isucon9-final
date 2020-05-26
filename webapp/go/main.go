@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/jmoiron/sqlx"
 	"io/ioutil"
 	"log"
 	"math"
@@ -15,13 +16,13 @@ import (
 	"strconv"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
-	"github.com/jmoiron/sqlx"
+	_ "github.com/newrelic/go-agent/v3/integrations/nrmysql"
 	goji "goji.io"
 	"goji.io/pat"
 	"golang.org/x/crypto/pbkdf2"
 	// "sync"
+	"github.com/newrelic/go-agent/v3/newrelic"
 )
 
 var (
@@ -30,6 +31,14 @@ var (
 )
 
 var dbx *sqlx.DB
+
+var (
+	app    *newrelic.Application
+	client = &http.Client{
+		Transport: newrelic.NewRoundTripper(nil),
+		Timeout:   time.Duration(10) * time.Second,
+	}
+)
 
 // DB定義
 
@@ -280,7 +289,8 @@ func getUser(r *http.Request) (user User, errCode int, errMsg string) {
 		return user, http.StatusUnauthorized, "no session"
 	}
 
-	err := dbx.Get(&user, "SELECT * FROM `users` WHERE `id` = ?", userID)
+	ctx := newrelic.NewContext(r.Context(), newrelic.FromContext(r.Context()))
+	err := dbx.GetContext(ctx, &user, "SELECT * FROM `users` WHERE `id` = ?", userID)
 	if err == sql.ErrNoRows {
 		return user, http.StatusUnauthorized, "user not found"
 	}
@@ -716,7 +726,8 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 		指定した列車の座席列挙
 		GET /train/seats?date=2020-03-01&train_class=のぞみ&train_name=96号&car_number=2&from=大阪&to=東京
 	*/
-
+	//ctx := newrelic.NewContext(r.Context(), newrelic.FromContext(r.Context()))
+	//s1 := newrelic.FromContext(r.Context()).StartSegment("prepare")
 	jst := time.FixedZone("Asia/Tokyo", 9*60*60)
 	date, err := time.Parse(time.RFC3339, r.URL.Query().Get("date"))
 	if err != nil {
@@ -736,9 +747,13 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 	fromName := r.URL.Query().Get("from")
 	toName := r.URL.Query().Get("to")
 
+	//s1.End()
+	//s2 := newrelic.FromContext(r.Context()).StartSegment("getTargetTrain")
+
 	// 対象列車の取得
 	var train Train
 	query := "SELECT * FROM train_master WHERE date=? AND train_class=? AND train_name=?"
+	//err = dbx.GetContext(ctx, &train, query, date.Format("2006/01/02"), trainClass, trainName)
 	err = dbx.Get(&train, query, date.Format("2006/01/02"), trainClass, trainName)
 	if err == sql.ErrNoRows {
 		errorResponse(w, http.StatusNotFound, "列車が存在しません")
@@ -752,6 +767,7 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 	query = "SELECT * FROM station_master WHERE name=?"
 
 	// From
+	//err = dbx.GetContext(ctx, &fromStation, query, fromName)
 	err = dbx.Get(&fromStation, query, fromName)
 	if err == sql.ErrNoRows {
 		log.Print("fromStation: no rows")
@@ -764,6 +780,7 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// To
+	//err = dbx.GetContext(ctx, &toStation, query, toName)
 	err = dbx.Get(&toStation, query, toName)
 	if err == sql.ErrNoRows {
 		log.Print("toStation: no rows")
@@ -775,6 +792,9 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	//s2.End()
+	//s3 := newrelic.FromContext(r.Context()).StartSegment("section3")
 
 	usableTrainClassList := getUsableTrainClassList(fromStation, toStation)
 	usable := false
@@ -793,6 +813,7 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 	seatList := []Seat{}
 
 	query = "SELECT * FROM seat_master WHERE train_class=? AND car_number=? ORDER BY seat_row, seat_column"
+	//err = dbx.SelectContext(ctx, &seatList, query, trainClass, carNumber)
 	err = dbx.Select(&seatList, query, trainClass, carNumber)
 	if err != nil {
 		errorResponse(w, http.StatusBadRequest, err.Error())
@@ -814,6 +835,16 @@ WHERE
 	r.date=? AND r.train_class=? AND r.train_name=? AND car_number=? AND seat_row=? AND seat_column=?
 `
 
+		//err = dbx.SelectContext(
+		//	ctx,
+		//	&seatReservationList, query,
+		//	date.Format("2006/01/02"),
+		//	seat.TrainClass,
+		//	trainName,
+		//	seat.CarNumber,
+		//	seat.SeatRow,
+		//	seat.SeatColumn,
+		//)
 		err = dbx.Select(
 			&seatReservationList, query,
 			date.Format("2006/01/02"),
@@ -834,6 +865,7 @@ WHERE
 			reservation := Reservation{}
 			query = "SELECT * FROM reservations WHERE reservation_id=?"
 			err = dbx.Get(&reservation, query, seatReservation.ReservationId)
+			//err = dbx.GetContext(ctx, &reservation, query, seatReservation.ReservationId)
 			if err != nil {
 				panic(err)
 			}
@@ -842,10 +874,12 @@ WHERE
 			query = "SELECT * FROM station_master WHERE name=?"
 
 			err = dbx.Get(&departureStation, query, reservation.Departure)
+			//err = dbx.GetContext(ctx, &departureStation, query, reservation.Departure)
 			if err != nil {
 				panic(err)
 			}
 			err = dbx.Get(&arrivalStation, query, reservation.Arrival)
+			//err = dbx.GetContext(ctx, &arrivalStation, query, reservation.Arrival)
 			if err != nil {
 				panic(err)
 			}
@@ -886,6 +920,7 @@ WHERE
 	i := 1
 	for {
 		err = dbx.Get(&seat, query, trainClass, i)
+		//err = dbx.GetContext(ctx, &seat, query, trainClass, i)
 		if err != nil {
 			break
 		}
@@ -900,6 +935,7 @@ WHERE
 		return
 	}
 	w.Write(resp)
+	//s3.End()
 }
 
 func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
@@ -2001,8 +2037,9 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 			payment_api = "http://payment:5000"
 		}
 
-		client := &http.Client{Timeout: time.Duration(10) * time.Second}
+		//client := &http.Client{Timeout: time.Duration(10) * time.Second}
 		req, err := http.NewRequest("DELETE", payment_api+"/payment/"+reservation.PaymentId, bytes.NewBuffer(j))
+		req = req.WithContext(r.Context())
 		if err != nil {
 			tx.Rollback()
 			errorResponse(w, http.StatusInternalServerError, "HTTPリクエストの作成に失敗しました")
@@ -2146,16 +2183,23 @@ func main() {
 		dbname,
 	)
 
-	dbx, err = sqlx.Open("mysql", dsn)
+	dbx, err = sqlx.Open("nrmysql", dsn)
 	if err != nil {
 		log.Fatalf("failed to connect to DB: %s.", err.Error())
 	}
 	defer dbx.Close()
 
+	app, err = newrelic.NewApplication(
+		newrelic.ConfigAppName("ISUCON9 (Go)"),
+		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")), //os.Getenv("NEW_RELIC_LICENSE_KEY")),
+		newrelic.ConfigDistributedTracerEnabled(true),
+		newrelic.ConfigDebugLogger(os.Stdout),
+	)
+
 	// HTTP
 
 	mux := goji.NewMux()
-
+	mux.Use(nrt)
 	mux.HandleFunc(pat.Post("/initialize"), initializeHandler)
 	mux.HandleFunc(pat.Get("/api/settings"), settingsHandler)
 
@@ -2179,4 +2223,19 @@ func main() {
 	err = http.ListenAndServe(":8000", mux)
 
 	log.Fatal(err)
+}
+
+// Middleware to create/end NewRelic transaction
+func nrt(inner http.Handler) http.Handler {
+	mw := func(w http.ResponseWriter, r *http.Request) {
+		txn := app.StartTransaction(r.URL.Path)
+		defer txn.End()
+
+		r = newrelic.RequestWithTransactionContext(r, txn)
+
+		txn.SetWebRequestHTTP(r)
+		w = txn.SetWebResponse(w)
+		inner.ServeHTTP(w, r)
+	}
+	return http.HandlerFunc(mw)
 }
