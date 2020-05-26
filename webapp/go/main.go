@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	crand "crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"io/ioutil"
@@ -354,31 +356,38 @@ func getDistanceFare(origToDestDistance float64) (int, error) {
 	return lastFare, nil
 }
 
-func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatClass string) (int, error) {
+func fareCalc(ctx context.Context, date time.Time, depStation, destStation int, trainClass, seatClass string) (int, error) {
 	//
 	// 料金計算メモ
 	// 距離運賃(円) * 期間倍率(繁忙期なら2倍等) * 車両クラス倍率(急行・各停等) * 座席クラス倍率(プレミアム・指定席・自由席)
 	//
+	txn := newrelic.FromContext(ctx)
+	defer txn.StartSegment("fareCalc").End()
+
 	var err error
 	var fromStation, toStation Station
 
 	query := "SELECT * FROM station_master WHERE id=?"
 
 	// From
-	err = dbx.Get(&fromStation, query, depStation)
+	err = dbx.GetContext(ctx, &fromStation, query, depStation)
 	if err == sql.ErrNoRows {
+		txn.NoticeError(err)
 		return 0, err
 	}
 	if err != nil {
+		txn.NoticeError(err)
 		return 0, err
 	}
 
 	// To
-	err = dbx.Get(&toStation, query, destStation)
+	err = dbx.GetContext(ctx, &toStation, query, destStation)
 	if err == sql.ErrNoRows {
+		txn.NoticeError(err)
 		return 0, err
 	}
 	if err != nil {
+		txn.NoticeError(err)
 		log.Print(err)
 		return 0, err
 	}
@@ -386,6 +395,7 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 	fmt.Println("distance", math.Abs(toStation.Distance-fromStation.Distance))
 	distFare, err := getDistanceFare(math.Abs(toStation.Distance - fromStation.Distance))
 	if err != nil {
+		txn.NoticeError(err)
 		return 0, err
 	}
 	fmt.Println("distFare", distFare)
@@ -393,12 +403,14 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 	// 期間・車両・座席クラス倍率
 	fareList := []Fare{}
 	query = "SELECT * FROM fare_master WHERE train_class=? AND seat_class=? ORDER BY start_date"
-	err = dbx.Select(&fareList, query, trainClass, seatClass)
+	err = dbx.SelectContext(ctx, &fareList, query, trainClass, seatClass)
 	if err != nil {
+		txn.NoticeError(err)
 		return 0, err
 	}
 
 	if len(fareList) == 0 {
+		txn.NoticeError(errors.New("fare_master does not exists"))
 		return 0, fmt.Errorf("fare_master does not exists")
 	}
 
@@ -448,16 +460,21 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 			発駅と着駅の到着時刻
 
 	*/
-
+	ctx := r.Context()
+	txn := newrelic.FromContext(r.Context())
+	s := txn.StartSegment("preparation")
+	defer s.End()
 	jst := time.FixedZone("JST", 9*60*60)
 	date, err := time.Parse(time.RFC3339, r.URL.Query().Get("use_at"))
 	if err != nil {
+		txn.NoticeError(err)
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	date = date.In(jst)
 
 	if !checkAvailableDate(date) {
+		txn.NoticeError(err)
 		errorResponse(w, http.StatusNotFound, "予約可能期間外です")
 		return
 	}
@@ -473,25 +490,30 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 	query := "SELECT * FROM station_master WHERE name=?"
 
 	// From
-	err = dbx.Get(&fromStation, query, fromName)
+	err = dbx.GetContext(ctx, &fromStation, query, fromName)
+
 	if err == sql.ErrNoRows {
+		txn.NoticeError(err)
 		log.Print("fromStation: no rows")
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err != nil {
+		txn.NoticeError(err)
 		errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// To
-	err = dbx.Get(&toStation, query, toName)
+	err = dbx.GetContext(ctx, &toStation, query, toName)
 	if err == sql.ErrNoRows {
+		txn.NoticeError(err)
 		log.Print("toStation: no rows")
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err != nil {
+		txn.NoticeError(err)
 		log.Print(err)
 		errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -507,7 +529,6 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		// 上りだったら駅リストを逆にする
 		query += " DESC"
 	}
-
 	usableTrainClassList := getUsableTrainClassList(fromStation, toStation)
 
 	var inQuery string
@@ -521,27 +542,30 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		inQuery, inArgs, err = sqlx.In(query, date.Format("2006/01/02"), usableTrainClassList, isNobori, trainClass)
 	}
 	if err != nil {
+		txn.NoticeError(err)
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	trainList := []Train{}
-	err = dbx.Select(&trainList, inQuery, inArgs...)
+	err = dbx.SelectContext(ctx, &trainList, inQuery, inArgs...)
 	if err != nil {
+		txn.NoticeError(err)
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	stations := []Station{}
-	err = dbx.Select(&stations, query)
+	err = dbx.SelectContext(ctx, &stations, query)
 	if err != nil {
+		txn.NoticeError(err)
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	fmt.Println("From", fromStation)
 	fmt.Println("To", toStation)
-
+	s = txn.StartSegment("")
 	trainSearchResponseList := []TrainSearchResponse{}
 
 	for _, train := range trainList {
@@ -573,6 +597,7 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 					break
 				} else {
 					// 出発駅より先に終点が見つかったとき
+					txn.AddAttribute("strangedata", "from before to")
 					fmt.Println("なんかおかしい")
 					break
 				}
@@ -590,14 +615,16 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 			// 所要時間
 			var departure, arrival string
 
-			err = dbx.Get(&departure, "SELECT departure FROM train_timetable_master WHERE date=? AND train_class=? AND train_name=? AND station=?", date.Format("2006/01/02"), train.TrainClass, train.TrainName, fromStation.Name)
+			err = dbx.GetContext(ctx, &departure, "SELECT departure FROM train_timetable_master WHERE date=? AND train_class=? AND train_name=? AND station=?", date.Format("2006/01/02"), train.TrainClass, train.TrainName, fromStation.Name)
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 
 			departureDate, err := time.Parse("2006/01/02 15:04:05 -07:00 MST", fmt.Sprintf("%s %s +09:00 JST", date.Format("2006/01/02"), departure))
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -607,30 +634,35 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			err = dbx.Get(&arrival, "SELECT arrival FROM train_timetable_master WHERE date=? AND train_class=? AND train_name=? AND station=?", date.Format("2006/01/02"), train.TrainClass, train.TrainName, toStation.Name)
+			err = dbx.GetContext(ctx, &arrival, "SELECT arrival FROM train_timetable_master WHERE date=? AND train_class=? AND train_name=? AND station=?", date.Format("2006/01/02"), train.TrainClass, train.TrainName, toStation.Name)
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 
-			premium_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "premium", false)
+			premium_avail_seats, err := train.getAvailableSeats(ctx, fromStation, toStation, "premium", false)
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			premium_smoke_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "premium", true)
+			premium_smoke_avail_seats, err := train.getAvailableSeats(ctx, fromStation, toStation, "premium", true)
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
 
-			reserved_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "reserved", false)
+			reserved_avail_seats, err := train.getAvailableSeats(ctx, fromStation, toStation, "reserved", false)
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			reserved_smoke_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "reserved", true)
+			reserved_smoke_avail_seats, err := train.getAvailableSeats(ctx, fromStation, toStation, "reserved", true)
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -673,22 +705,25 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// 料金計算
-			premiumFare, err := fareCalc(date, fromStation.ID, toStation.ID, train.TrainClass, "premium")
+			premiumFare, err := fareCalc(ctx, date, fromStation.ID, toStation.ID, train.TrainClass, "premium")
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			premiumFare = premiumFare*adult + premiumFare/2*child
 
-			reservedFare, err := fareCalc(date, fromStation.ID, toStation.ID, train.TrainClass, "reserved")
+			reservedFare, err := fareCalc(ctx, date, fromStation.ID, toStation.ID, train.TrainClass, "reserved")
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			reservedFare = reservedFare*adult + reservedFare/2*child
 
-			nonReservedFare, err := fareCalc(date, fromStation.ID, toStation.ID, train.TrainClass, "non-reserved")
+			nonReservedFare, err := fareCalc(ctx, date, fromStation.ID, toStation.ID, train.TrainClass, "non-reserved")
 			if err != nil {
+				txn.NoticeError(err)
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -712,13 +747,16 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	s.End()
+	s = txn.StartSegment("output")
 	resp, err := json.Marshal(trainSearchResponseList)
 	if err != nil {
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	w.Write(resp)
-
+	s.End()
 }
 
 func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
@@ -1477,10 +1515,11 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 運賃計算
+	ctx := context.TODO()
 	var fare int
 	switch req.SeatClass {
 	case "premium":
-		fare, err = fareCalc(date, fromStation.ID, toStation.ID, req.TrainClass, "premium")
+		fare, err = fareCalc(ctx, date, fromStation.ID, toStation.ID, req.TrainClass, "premium")
 		if err != nil {
 			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, err.Error())
@@ -1488,7 +1527,7 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "reserved":
-		fare, err = fareCalc(date, fromStation.ID, toStation.ID, req.TrainClass, "reserved")
+		fare, err = fareCalc(ctx, date, fromStation.ID, toStation.ID, req.TrainClass, "reserved")
 		if err != nil {
 			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, err.Error())
@@ -1496,7 +1535,7 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "non-reserved":
-		fare, err = fareCalc(date, fromStation.ID, toStation.ID, req.TrainClass, "non-reserved")
+		fare, err = fareCalc(ctx, date, fromStation.ID, toStation.ID, req.TrainClass, "non-reserved")
 		if err != nil {
 			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, err.Error())

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"github.com/newrelic/go-agent/v3/newrelic"
 	"time"
 )
 
@@ -48,16 +50,17 @@ func getUsableTrainClassList(fromStation Station, toStation Station) []string {
 	return ret
 }
 
-func (train Train) getAvailableSeats(fromStation Station, toStation Station, seatClass string, isSmokingSeat bool) ([]Seat, error) {
+func (train Train) getAvailableSeats(ctx context.Context, fromStation Station, toStation Station, seatClass string, isSmokingSeat bool) ([]Seat, error) {
 	// 指定種別の空き座席を返す
-
+	txn := newrelic.FromContext(ctx)
+	defer txn.StartSegment("getAvailableSeats").End()
 	var err error
 
 	// 全ての座席を取得する
 	query := "SELECT * FROM seat_master WHERE train_class=? AND seat_class=? AND is_smoking_seat=?"
 
 	seatList := []Seat{}
-	err = dbx.Select(&seatList, query, train.TrainClass, seatClass, isSmokingSeat)
+	err = dbx.SelectContext(ctx, &seatList, query, train.TrainClass, seatClass, isSmokingSeat)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +91,7 @@ func (train Train) getAvailableSeats(fromStation Station, toStation Station, sea
 	}
 
 	seatReservationList := []SeatReservation{}
-	err = dbx.Select(&seatReservationList, query, fromStation.ID, fromStation.ID, toStation.ID, toStation.ID, fromStation.ID, toStation.ID)
+	err = dbx.SelectContext(ctx, &seatReservationList, query, fromStation.ID, fromStation.ID, toStation.ID, toStation.ID, fromStation.ID, toStation.ID)
 	if err != nil {
 		return nil, err
 	}
