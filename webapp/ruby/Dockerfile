@@ -1,4 +1,4 @@
-FROM ruby
+FROM ruby:2.6
 
 ENV TZ "Asia/Tokyo"
 

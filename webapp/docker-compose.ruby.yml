@@ -10,6 +10,7 @@ services:
       - ".env"
     environment:
       - "PAYMENT_API"
+      - "NEW_RELIC_LICENSE_KEY="
     links:
       - payment
     ports:
