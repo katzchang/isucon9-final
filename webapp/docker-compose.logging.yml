@@ -1,0 +1,32 @@
+version: '3'
+
+services:
+  fluentd:
+    image: newrelic/newrelic-fluentd-docker:latest
+    ports:
+      - '24224:24224'
+    volumes:
+      - ./fluentd:/fluentd/etc/
+    env_file:
+      - ".env"
+
+  webapp:
+    logging:
+      driver: fluentd
+    links:
+      - "fluentd"
+  nginx:
+    logging:
+      driver: fluentd
+    links:
+      - "fluentd"
+  payment:
+    logging:
+      driver: fluentd
+    links:
+      - "fluentd"
+  mysql:
+    logging:
+      driver: fluentd
+    links:
+      - "fluentd"

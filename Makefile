@@ -5,8 +5,8 @@ all: frontend webapp payment bench
 
 LANGUAGE:=go
 up:
-	docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.$(LANGUAGE).yml build
-	docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.$(LANGUAGE).yml up
+	docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.$(LANGUAGE).yml -f webapp/docker-compose.logging.yml build
+	docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.$(LANGUAGE).yml -f webapp/docker-compose.logging.yml up
 
 frontend:
 	cd webapp/frontend && make
