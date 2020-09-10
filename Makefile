@@ -2,6 +2,12 @@
 
 all: frontend webapp payment bench
 
+
+LANGUAGE:=go
+up:
+	docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.$(LANGUAGE).yml build
+	docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.$(LANGUAGE).yml up
+
 frontend:
 	cd webapp/frontend && make
 	cd webapp/frontend/dist && tar zcvf ../../../ansible/files/frontend.tar.gz .
