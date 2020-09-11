@@ -1,5 +1,14 @@
 # ISUCON9 本戦問題
 
+## For New Relic + Fluentd + Prometheus!
+
+1. `cp webapp/.newrelic.template webapp/.newrelic`
+2. Put your keys on webapp/.newrelic file
+3. And run `make up`
+
+Then you'll see data on your New Relic One!
+
+
 ## ドキュメント
 
 
