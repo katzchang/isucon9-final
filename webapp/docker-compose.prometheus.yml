@@ -1,50 +1,21 @@
-version: '2'
+version: '3'
 
 services:
-    prometheus:
-        image: prom/prometheus
-        container_name: prometheus
+    nri-prometheus:
+        image: newrelic/nri-prometheus:2.0.1
         volumes:
-          - ./prometheus.yml:/etc/prometheus/prometheus.yml
-          - ./alert.rules:/etc/prometheus/alert.rules
-        command:
-          - '--config.file=/etc/prometheus/prometheus.yml'
-          - '--storage.tsdb.path=/prometheus'
-          - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-          - '--web.console.templates=/usr/share/prometheus/consoles'
-        expose:
-          - 9090
-        ports:
-          - 9090:9090
+          - ./nri-prometheus:/etc/nri-prometheus/
+        env_file:
+          - ".env"
         links:
-          - alertmanager:alertmanager
-    alertmanager:
-        image: prom/alertmanager
+          - "nginx-prometheus-exporter"
+
+    nginx-prometheus-exporter:
+        image: nginx/nginx-prometheus-exporter:0.8.0
         ports:
-          - 9093:9093
-        volumes:
-          - ./alertmanager.yml:/etc/alertmanager/config.yml
+          - "9113:9113"
         command:
-          - '--config.file=/etc/alertmanager/config.yml'
-          - '--storage.path=/alertmanager'
-    grafana:
-        image: grafana/grafana
-        depends_on:
-          - prometheus
-        ports:
-          - 3000:3000
-        environment:
-          - GF_SECURITY_ADMIN_PASSWORD=foobar
-          - GF_USERS_ALLOW_SIGN_UP=false
+          - "-nginx.scrape-uri"
+          - "http://nginx:80/stub_status"
         links:
-          - prometheus:prometheus
-    importer:
-      image: giantswarm/tiny-tools
-      depends_on:
-        - grafana
-      entrypoint: /bin/sh import.sh
-      working_dir: /opt/grafana-import-dashboards
-      volumes:
-        - ./grafana:/opt/grafana-import-dashboards
-      links:
-        - grafana:grafana
+          - "nginx"

@@ -19,9 +19,9 @@ scrape_enabled_label: "prometheus.io/scrape"
 # Whether nodes need to be labeled to be scraped or not. Defaults to true.
 require_scrape_enabled_label_for_nodes: true
 
-# targets:
-# - description: "Secure etcd example"
-#   urls: ["https://123.456.7.1:2379", "https://123.456.7.2:2379"]
+targets:
+ - description: "http servers"
+   urls: ["http://nginx-prometheus-exporter:9113"]
 #   tls_config:
 #     ca_file_path: "/etc/etcd/etcd-client-ca.crt"
 #     cert_file_path: "/etc/etcd/etcd-client.crt"
