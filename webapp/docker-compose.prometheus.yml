@@ -6,7 +6,7 @@ services:
         volumes:
           - ./nri-prometheus:/etc/nri-prometheus/
         env_file:
-          - ".env"
+          - ".newrelic"
         links:
           - "webapp"
           - "nginx-prometheus-exporter"

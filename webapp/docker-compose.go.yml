@@ -8,6 +8,7 @@ services:
       - ./go:/go/src/webapp
     env_file:
       - ".env"
+      - ".newrelic"
     environment:
       - "PAYMENT_API"
     links:

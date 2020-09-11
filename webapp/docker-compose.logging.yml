@@ -8,7 +8,7 @@ services:
     volumes:
       - ./fluentd:/fluentd/etc/
     env_file:
-      - ".env"
+      - ".newrelic"
 
   webapp:
     logging:
