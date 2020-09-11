@@ -8,6 +8,7 @@ services:
         env_file:
           - ".env"
         links:
+          - "webapp"
           - "nginx-prometheus-exporter"
 
     nginx-prometheus-exporter:

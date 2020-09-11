@@ -25,6 +25,9 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 	// "sync"
 	"github.com/newrelic/go-agent/v3/newrelic"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 )
 
 var (
@@ -2239,6 +2242,8 @@ func main() {
 
 	mux := goji.NewMux()
 	mux.Use(nrt)
+	mux.HandleFunc(pat.Get("/metrics"), promhttp.Handler().ServeHTTP)
+
 	mux.HandleFunc(pat.Post("/initialize"), initializeHandler)
 	mux.HandleFunc(pat.Get("/api/settings"), settingsHandler)
 

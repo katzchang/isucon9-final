@@ -21,7 +21,7 @@ require_scrape_enabled_label_for_nodes: true
 
 targets:
  - description: "http servers"
-   urls: ["http://nginx-prometheus-exporter:9113"]
+   urls: ["http://webapp:8000", "http://nginx-prometheus-exporter:9113"]
 #   tls_config:
 #     ca_file_path: "/etc/etcd/etcd-client-ca.crt"
 #     cert_file_path: "/etc/etcd/etcd-client.crt"
