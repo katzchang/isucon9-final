@@ -1,0 +1,10 @@
+v# Account Setting > License Key on the right pane
+ # Ends with "...NRAL"
+ # For more details: https://docs.newrelic.com/docs/accounts/accounts-billing/account-setup/new-relic-license-key
+ NEW_RELIC_LICENSE_KEY=<<YOUR LICENSE KEY HERE>>>
+ LICENSE_KEY=<<YOUR LICENSE KEY HERE>>>
+
+ # Account Setting > Integrations on the left pane > API Keys > Other Keys > Insights API Keys > Insert Keys
+ # Starts with "NRII-..."
+ # For more details: https://docs.newrelic.com/docs/telemetry-data-platform/ingest-manage-data/ingest-apis/use-event-api-report-custom-events#register
+ NEWRELIC_API_INSERT_KEY=<<INSHGITS API INSERT KEY HERE>>
